@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "backend": "python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit"
@@ -12,7 +13,11 @@
   "dependencies": {
     "expo": "~54.0.33",
     "expo-clipboard": "~8.0.8",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.22",
     "expo-status-bar": "~3.0.9",
+    "fast-xml-parser": "^5.8.0",
+    "jszip": "^3.10.1",
     "lucide-react-native": "^1.16.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

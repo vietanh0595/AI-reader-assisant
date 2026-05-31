@@ -1,23 +1,27 @@
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowLeft,
   Bookmark,
   BookOpen,
+  Copy as CopyIcon,
   HelpCircle,
   List,
   LucideProps,
   MessageCircle,
-  MoreHorizontal,
   Search,
   Send,
   SlidersHorizontal,
   Sparkles,
   Type,
+  Upload,
 } from 'lucide-react-native';
-import { ComponentType, useCallback, useEffect, useMemo, useState } from 'react';
+import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
+  NativeModules,
   Platform,
   Pressable,
   SafeAreaView,
@@ -28,12 +32,23 @@ import {
   View,
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { parseEpubAsset, ParsedEpubBook } from './epub';
 
 type QuickAction = 'explain' | 'example' | 'rephrase' | 'ask';
+type ClipboardAction = 'copy';
+type SelectionAction = QuickAction | ClipboardAction;
 type FollowUpAction = 'simpler';
 type InsightAction = QuickAction | FollowUpAction;
 type AppIcon = ComponentType<LucideProps>;
 type SelectionKind = 'word' | 'phrase' | 'paragraph';
+type ReaderBlockKind =
+  | 'body'
+  | 'chapterNumber'
+  | 'chapterTitle'
+  | 'sectionHeading'
+  | 'subheading'
+  | 'quote'
+  | 'listItem';
 
 type PassageSegment = {
   id: string;
@@ -43,8 +58,31 @@ type PassageSegment = {
 };
 
 type Paragraph = {
+  blockKind?: ReaderBlockKind;
   id: string;
   segments: PassageSegment[];
+};
+
+type ReaderChapter = {
+  id: string;
+  paragraphId: string;
+  title: string;
+};
+
+type ReaderBook = {
+  author: string;
+  chapters: ReaderChapter[];
+  fileName?: string;
+  page: string;
+  paragraphs: Paragraph[];
+  progress: string;
+  source: 'epub' | 'sample';
+  title: string;
+};
+
+type ScrollTarget = {
+  nonce: number;
+  paragraphId: string;
 };
 
 type ReaderSelection = {
@@ -59,6 +97,16 @@ type Insight = {
   body: string;
 };
 
+type AssistRequestPayload = {
+  action: InsightAction;
+  author: string;
+  bookTitle: string;
+  paragraphText: string;
+  question?: string;
+  selectedText: string;
+  selectionKind: SelectionKind;
+};
+
 type ReaderMessage =
   | {
       paragraphId: string;
@@ -70,21 +118,24 @@ type ReaderMessage =
       type: 'clearSelection';
     };
 
-const quickActions: Array<{ action: QuickAction; icon: AppIcon; label: string }> = [
+const selectionActions: Array<{ action: SelectionAction; icon: AppIcon; label: string }> = [
   { action: 'explain', icon: Sparkles, label: 'Explain' },
   { action: 'example', icon: BookOpen, label: 'Example' },
   { action: 'rephrase', icon: MessageCircle, label: 'Rephrase' },
   { action: 'ask', icon: HelpCircle, label: 'Ask' },
+  { action: 'copy', icon: CopyIcon, label: 'Copy' },
 ];
 
-const book = {
+const sampleBookMetadata = {
   author: 'Daniel Kahneman',
   page: 'Page 112 of 499',
   progress: '22%',
   title: 'Thinking, Fast and Slow',
 };
 
-const paragraphs: Paragraph[] = [
+const apiBaseUrl = getApiBaseUrl();
+
+const sampleParagraphs: Paragraph[] = [
   {
     id: 'p1',
     segments: [
@@ -162,101 +213,12 @@ const paragraphs: Paragraph[] = [
   },
 ];
 
-const primaryInsights: Record<string, Record<InsightAction, Insight>> = {
-  'extrapolate-word': {
-    explain: {
-      eyebrow: 'Definition',
-      body:
-        'To extrapolate means to use what you know now to guess beyond the evidence, especially about what will happen later.',
-    },
-    example: {
-      eyebrow: 'Example',
-      body: 'If today is unusually hot, you might assume the whole month will be hot. That is extrapolating.',
-    },
-    rephrase: {
-      eyebrow: 'Use in this sentence',
-      body: 'Here, extrapolate means extending a current pattern into a broader prediction.',
-    },
-    ask: {
-      eyebrow: 'Follow-up',
-      body: 'A useful question is: what evidence is the reader using to project beyond what is directly known?',
-    },
-    simpler: {
-      eyebrow: 'Simpler',
-      body: 'It means guessing a bigger pattern from a small piece of evidence.',
-    },
-  },
-  'present-future-phrase': {
-    explain: {
-      eyebrow: 'Short version',
-      body:
-        'We tend to assume today will continue tomorrow. We extend patterns forward and backward in time, which can lead to big mistakes.',
-    },
-    example: {
-      eyebrow: 'Example',
-      body:
-        'If a stock has risen for five days, we may expect it to keep rising, even when those five days tell us very little about what happens next.',
-    },
-    rephrase: {
-      eyebrow: 'Rephrased',
-      body:
-        'People often use what is happening now as their best guess for what happened before and what will happen later.',
-    },
-    ask: {
-      eyebrow: 'Follow-up',
-      body:
-        'A useful question is: when does projecting from the present help us, and when does it mislead us?',
-    },
-    simpler: {
-      eyebrow: 'Simpler',
-      body: 'We often expect the future to look like the present, even when that is a weak guess.',
-    },
-  },
+const sampleBook: ReaderBook = {
+  ...sampleBookMetadata,
+  chapters: [{ id: 'sample-chapter', paragraphId: 'p1', title: 'Sample passage' }],
+  paragraphs: sampleParagraphs,
+  source: 'sample',
 };
-
-function getInsight(selection: ReaderSelection, action: InsightAction, askedQuestion: string): Insight {
-  if (action === 'ask' && askedQuestion) {
-    return {
-      eyebrow: 'Answer',
-      body: `For "${askedQuestion}", the key idea is that the author is warning against treating the present as proof of a stable pattern.`,
-    };
-  }
-
-  const savedInsight = primaryInsights[selection.id]?.[action];
-
-  if (savedInsight) {
-    return savedInsight;
-  }
-
-  const fallbackByAction: Record<InsightAction, Insight> = {
-    ask: {
-      eyebrow: 'Follow-up',
-      body: 'A useful follow-up is: what assumption does this selection need me to accept?',
-    },
-    example: {
-      eyebrow: 'Example',
-      body:
-        'It is like assuming a calm week means a calm year. The recent pattern feels meaningful, but it may only be a small sample.',
-    },
-    explain: {
-      eyebrow: selection.selectionKind === 'word' ? 'Definition' : 'Short version',
-      body:
-        selection.selectionKind === 'word'
-          ? 'This word is doing important conceptual work in the passage.'
-          : 'The selected passage is compressing a larger claim into a compact statement.',
-    },
-    rephrase: {
-      eyebrow: 'Rephrased',
-      body: `In simpler words: ${selection.text}`,
-    },
-    simpler: {
-      eyebrow: 'Simpler',
-      body: 'The author is saying this idea needs to be slowed down.',
-    },
-  };
-
-  return fallbackByAction[action];
-}
 
 function getParagraphText(paragraph: Paragraph) {
   return paragraph.segments.map((segment) => segment.text).join('');
@@ -276,7 +238,7 @@ function inferSelectionKind(text: string): SelectionKind {
   return normalizedText.length > 90 ? 'paragraph' : 'phrase';
 }
 
-function findKnownSegmentForSelection(selectedText: string) {
+function findKnownSegmentForSelection(selectedText: string, readerParagraphs: Paragraph[]) {
   const normalizedSelection = normalizeSelectionText(selectedText);
 
   if (!normalizedSelection) {
@@ -284,14 +246,143 @@ function findKnownSegmentForSelection(selectedText: string) {
   }
 
   return (
-    paragraphs
+    readerParagraphs
       .flatMap((paragraph) => paragraph.segments)
       .find((segment) => normalizeSelectionText(segment.text) === normalizedSelection) ?? null
   );
 }
 
-function getParagraphById(paragraphId: string) {
-  return paragraphs.find((paragraph) => paragraph.id === paragraphId) ?? null;
+function getParagraphById(paragraphId: string, readerParagraphs: Paragraph[]) {
+  return readerParagraphs.find((paragraph) => paragraph.id === paragraphId) ?? null;
+}
+
+function getApiBaseUrl() {
+  const configuredUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/$/, '');
+  }
+
+  const devServerHost = getNativeDevServerHost();
+
+  if (devServerHost && !isLoopbackHost(devServerHost)) {
+    return `http://${devServerHost}:8000`;
+  }
+
+  return 'http://localhost:8000';
+}
+
+function getNativeDevServerHost() {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+
+  const sourceCode = NativeModules.SourceCode as { scriptURL?: string } | undefined;
+  const scriptUrl = sourceCode?.scriptURL;
+
+  if (!scriptUrl) {
+    return null;
+  }
+
+  const hostMatch = scriptUrl.match(/^(?:https?|exp):\/\/([^/:]+)/);
+  return hostMatch?.[1] ?? null;
+}
+
+function isLoopbackHost(host: string) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function createAssistPayload(
+  selection: ReaderSelection,
+  action: InsightAction,
+  readerBook: ReaderBook,
+  question?: string,
+): AssistRequestPayload {
+  const paragraph = getParagraphById(selection.paragraphId, readerBook.paragraphs);
+
+  return {
+    action,
+    author: readerBook.author,
+    bookTitle: readerBook.title,
+    paragraphText: paragraph ? getParagraphText(paragraph) : selection.text,
+    question,
+    selectedText: selection.text,
+    selectionKind: selection.selectionKind,
+  };
+}
+
+function toReaderBook(parsedBook: ParsedEpubBook): ReaderBook {
+  return {
+    author: parsedBook.author,
+    chapters: parsedBook.chapters,
+    fileName: parsedBook.fileName,
+    page: 'Imported EPUB',
+    paragraphs: parsedBook.paragraphs,
+    progress: `${parsedBook.paragraphs.length} paragraphs`,
+    source: 'epub',
+    title: parsedBook.title,
+  };
+}
+
+async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
+  const assistUrl = `${apiBaseUrl}/ai/assist`;
+  let response: Response;
+
+  try {
+    response = await fetch(assistUrl, {
+      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+  } catch (error) {
+    throw new Error(`Could not reach ${assistUrl}. ${getErrorMessage(error)}`);
+  }
+
+  if (!response.ok) {
+    const errorDetail = await readResponseError(response);
+    throw new Error(errorDetail ?? `AI request failed with status ${response.status}.`);
+  }
+
+  const data: unknown = await response.json();
+
+  if (!isRecord(data) || typeof data.eyebrow !== 'string' || typeof data.body !== 'string') {
+    throw new Error('AI response was not in the expected format.');
+  }
+
+  return {
+    body: data.body.trim(),
+    eyebrow: data.eyebrow.trim(),
+  };
+}
+
+async function readResponseError(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    const parsedBody: unknown = JSON.parse(responseText);
+
+    if (isRecord(parsedBody) && typeof parsedBody.detail === 'string') {
+      return parsedBody.detail;
+    }
+  } catch {
+    return responseText;
+  }
+
+  return responseText;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'AI request failed.';
 }
 
 function stopPressPropagation(event: unknown) {
@@ -308,10 +399,8 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#039;');
 }
 
-function createReaderHtml() {
-  const body = paragraphs
-    .map((paragraph) => `<p data-paragraph-id="${paragraph.id}">${escapeHtml(getParagraphText(paragraph))}</p>`)
-    .join('\n');
+function createReaderHtml(readerParagraphs: Paragraph[]) {
+  const body = readerParagraphs.map(renderReaderBlockHtml).join('\n');
 
   return `<!doctype html>
 <html>
@@ -333,24 +422,95 @@ function createReaderHtml() {
       body {
         color: #171715;
         font-family: Georgia, 'Times New Roman', serif;
-        font-size: 16px;
-        line-height: 1.58;
-        padding: 10px 27px 136px;
+        font-size: 17px;
+        line-height: 1.55;
+        padding: 18px 28px 146px;
         -webkit-touch-callout: none;
         -webkit-user-select: text;
         user-select: text;
       }
 
-      p {
-        margin: 0 0 22px;
+      .reader-block {
+        color: #171715;
+        font-family: Georgia, 'Times New Roman', serif;
+        letter-spacing: 0;
         -webkit-touch-callout: none;
         -webkit-user-select: text;
         user-select: text;
+      }
+
+      .reader-body {
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1.55;
+        margin: 0 0 22px;
+        text-align: left;
+        text-indent: 1.15em;
+      }
+
+      .reader-body:first-child,
+      .reader-chapterTitle + .reader-body,
+      .reader-sectionHeading + .reader-body,
+      .reader-subheading + .reader-body {
+        text-indent: 0;
+      }
+
+      .reader-chapterNumber {
+        font-size: 30px;
+        font-weight: 700;
+        line-height: 1.08;
+        margin: 46px 0 56px;
+        text-align: center;
+      }
+
+      .reader-chapterTitle {
+        font-size: 29px;
+        font-weight: 700;
+        line-height: 1.05;
+        margin: 0 0 54px;
+        text-align: center;
+      }
+
+      .reader-sectionHeading {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.25;
+        margin: 34px 0 20px;
+        text-align: left;
+      }
+
+      .reader-subheading {
+        font-size: 17px;
+        font-weight: 400;
+        line-height: 1.35;
+        margin: 28px 0 18px;
+        text-align: left;
+      }
+
+      .reader-quote {
+        border-left: 2px solid #d8d1c4;
+        color: #3f3b34;
+        font-size: 16px;
+        font-style: italic;
+        line-height: 1.5;
+        margin: 22px 0 24px;
+        padding-left: 14px;
+      }
+
+      .reader-listItem {
+        font-size: 17px;
+        line-height: 1.5;
+        margin: 0 0 14px 18px;
       }
 
       ::selection {
         background: #cfdec8;
         color: #171715;
+      }
+
+      .reader-selection-highlight {
+        background: #cfdec8;
+        border-radius: 3px;
       }
     </style>
   </head>
@@ -386,7 +546,52 @@ function createReaderHtml() {
           return null;
         }
 
-        function postSelection() {
+        var timer;
+        var isClearingNativeSelection = false;
+
+        function postMessage(message) {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(message));
+        }
+
+        function removeAppHighlight() {
+          var highlights = Array.prototype.slice.call(document.querySelectorAll('.reader-selection-highlight'));
+
+          highlights.forEach(function (highlight) {
+            var parent = highlight.parentNode;
+
+            if (!parent) {
+              return;
+            }
+
+            parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight);
+            parent.normalize();
+          });
+        }
+
+        function freezeSelection(range, selection) {
+          var frozenRange = range.cloneRange();
+
+          setTimeout(function () {
+            removeAppHighlight();
+
+            try {
+              var highlight = document.createElement('span');
+              highlight.className = 'reader-selection-highlight';
+              frozenRange.surroundContents(highlight);
+            } catch (error) {
+              // If WebKit gives us a complex range, keep the app bar and simply drop native selection.
+            }
+
+            isClearingNativeSelection = true;
+            selection.removeAllRanges();
+
+            setTimeout(function () {
+              isClearingNativeSelection = false;
+            }, 0);
+          }, 0);
+        }
+
+        function postSelection(shouldFreezeSelection) {
           var selection = window.getSelection();
 
           if (!selection || selection.rangeCount === 0) {
@@ -396,7 +601,9 @@ function createReaderHtml() {
           var text = normalize(selection.toString());
 
           if (!text) {
-            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'clearSelection' }));
+            if (!isClearingNativeSelection) {
+              postMessage({ type: 'clearSelection' });
+            }
             return;
           }
 
@@ -407,59 +614,131 @@ function createReaderHtml() {
             return;
           }
 
-          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+          postMessage({
             type: 'selection',
             paragraphId: paragraph.dataset.paragraphId,
             selectionKind: inferSelectionKind(text),
             text: text
-          }));
+          });
+
+          if (shouldFreezeSelection) {
+            freezeSelection(range, selection);
+          }
         }
 
-        var timer;
-        function schedulePostSelection() {
+        function clearReaderSelection() {
+          removeAppHighlight();
+          postMessage({ type: 'clearSelection' });
+        }
+
+        function schedulePostSelection(shouldFreezeSelection) {
           clearTimeout(timer);
-          timer = setTimeout(postSelection, 160);
+          timer = setTimeout(function () {
+            postSelection(shouldFreezeSelection);
+          }, shouldFreezeSelection ? 40 : 160);
         }
 
-        document.addEventListener('selectionchange', schedulePostSelection);
-        document.addEventListener('mouseup', schedulePostSelection);
-        document.addEventListener('touchend', schedulePostSelection);
+        document.addEventListener('selectionchange', function () {
+          schedulePostSelection(false);
+        });
+        document.addEventListener('mouseup', function () {
+          schedulePostSelection(true);
+        });
+        document.addEventListener('touchend', function () {
+          schedulePostSelection(true);
+        });
+        document.addEventListener('touchstart', clearReaderSelection);
+        document.addEventListener('mousedown', clearReaderSelection);
       })();
     </script>
   </body>
-</html>`;
+  </html>`;
+}
+
+function renderReaderBlockHtml(paragraph: Paragraph) {
+  const blockKind = getReaderBlockKind(paragraph);
+  const tagName = getReaderHtmlTag(blockKind);
+  const className = `reader-block reader-${blockKind}`;
+  const text = escapeHtml(getParagraphText(paragraph));
+
+  return `<${tagName} id="${escapeHtml(paragraph.id)}" data-paragraph-id="${escapeHtml(
+    paragraph.id,
+  )}" data-reader-block="${blockKind}" class="${className}">${text}</${tagName}>`;
+}
+
+function getReaderBlockKind(paragraph: Paragraph): ReaderBlockKind {
+  return paragraph.blockKind ?? 'body';
+}
+
+function getReaderHtmlTag(blockKind: ReaderBlockKind) {
+  switch (blockKind) {
+    case 'chapterNumber':
+    case 'chapterTitle':
+      return 'h1';
+    case 'sectionHeading':
+      return 'h2';
+    case 'subheading':
+      return 'h3';
+    case 'quote':
+      return 'blockquote';
+    default:
+      return 'p';
+  }
 }
 
 export default function App() {
+  const [currentBook, setCurrentBook] = useState<ReaderBook>(sampleBook);
   const [selection, setSelection] = useState<ReaderSelection | null>(null);
   const [selectedAction, setSelectedAction] = useState<InsightAction | null>(null);
+  const [insight, setInsight] = useState<Insight | null>(null);
   const [savedInsightIds, setSavedInsightIds] = useState<string[]>([]);
+  const [isImportingBook, setIsImportingBook] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isTocOpen, setIsTocOpen] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<ScrollTarget | null>(null);
   const [isAskOpen, setIsAskOpen] = useState(false);
+  const [isAssistLoading, setIsAssistLoading] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
-  const [askedQuestion, setAskedQuestion] = useState('');
-  const readerHtml = useMemo(createReaderHtml, []);
+  const assistRequestId = useRef(0);
+  const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readerHtml = useMemo(() => createReaderHtml(currentBook.paragraphs), [currentBook.paragraphs]);
 
-  const visibleInsight = selection && selectedAction ? getInsight(selection, selectedAction, askedQuestion) : null;
-  const insightId = selection && selectedAction ? `${selection.id}:${selectedAction}` : null;
+  const insightId = selection && selectedAction && insight ? `${selection.id}:${selectedAction}:${insight.body}` : null;
   const isSaved = insightId ? savedInsightIds.includes(insightId) : false;
 
   function clearSelection() {
+    assistRequestId.current += 1;
     setSelection(null);
     setSelectedAction(null);
+    setInsight(null);
+    setAssistError(null);
+    setIsAssistLoading(false);
+    setCopiedSelectionId(null);
     setIsAskOpen(false);
-    setAskedQuestion('');
     setQuestion('');
+  }
+
+  function jumpToChapter(chapter: ReaderChapter) {
+    clearSelection();
+    setScrollTarget({
+      nonce: Date.now(),
+      paragraphId: chapter.paragraphId,
+    });
+    setIsTocOpen(false);
   }
 
   function setSelectionFromReader(text: string, paragraphId: string, selectionKind: SelectionKind) {
     const normalizedText = normalizeSelectionText(text);
-    const knownSegment = findKnownSegmentForSelection(normalizedText);
+    const knownSegment = findKnownSegmentForSelection(normalizedText, currentBook.paragraphs);
 
     if (!normalizedText) {
       clearSelection();
       return;
     }
 
+    assistRequestId.current += 1;
     setSelection({
       id: knownSegment?.id ?? `selection:${paragraphId}:${normalizedText}`,
       paragraphId: knownSegment?.paragraphId ?? paragraphId,
@@ -467,28 +746,122 @@ export default function App() {
       text: normalizedText,
     });
     setSelectedAction(null);
+    setInsight(null);
+    setAssistError(null);
+    setIsAssistLoading(false);
+    setCopiedSelectionId(null);
     setIsAskOpen(false);
-    setAskedQuestion('');
   }
 
-  const handleReaderMessage = useCallback((message: ReaderMessage) => {
+  function handleReaderMessage(message: ReaderMessage) {
     if (message.type === 'clearSelection') {
       clearSelection();
       return;
     }
 
     setSelectionFromReader(message.text, message.paragraphId, message.selectionKind);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimer.current) {
+        clearTimeout(copyFeedbackTimer.current);
+      }
+    };
   }, []);
 
-  function chooseAction(action: QuickAction) {
-    if (action === 'ask') {
-      setIsAskOpen(true);
-      setSelectedAction('ask');
+  function chooseAction(action: SelectionAction) {
+    if (action === 'copy') {
+      void copySelectionToClipboard();
       return;
     }
 
-    setSelectedAction(action);
+    if (action === 'ask') {
+      assistRequestId.current += 1;
+      setIsAskOpen(true);
+      setSelectedAction('ask');
+      setInsight(null);
+      setAssistError(null);
+      setIsAssistLoading(false);
+      return;
+    }
+
     setIsAskOpen(false);
+    void runAssist(action);
+  }
+
+  async function copySelectionToClipboard() {
+    if (!selection) {
+      return;
+    }
+
+    const copiedId = selection.id;
+    await Clipboard.setStringAsync(selection.text);
+    setCopiedSelectionId(copiedId);
+
+    if (copyFeedbackTimer.current) {
+      clearTimeout(copyFeedbackTimer.current);
+    }
+
+    copyFeedbackTimer.current = setTimeout(() => {
+      setCopiedSelectionId((currentId) => (currentId === copiedId ? null : currentId));
+    }, 1400);
+  }
+
+  async function importEpubBook() {
+    setImportError(null);
+    setIsImportingBook(true);
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ['application/epub+zip', 'application/octet-stream', '*/*'],
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const importedBook = toReaderBook(await parseEpubAsset(result.assets[0]));
+      clearSelection();
+      setSavedInsightIds([]);
+      setCurrentBook(importedBook);
+    } catch (error) {
+      setImportError(getErrorMessage(error));
+    } finally {
+      setIsImportingBook(false);
+    }
+  }
+
+  async function runAssist(action: InsightAction, questionText?: string) {
+    if (!selection) {
+      return;
+    }
+
+    const requestId = assistRequestId.current + 1;
+    assistRequestId.current = requestId;
+
+    setSelectedAction(action);
+    setInsight(null);
+    setAssistError(null);
+    setIsAssistLoading(true);
+
+    try {
+      const nextInsight = await requestAssist(createAssistPayload(selection, action, currentBook, questionText));
+
+      if (assistRequestId.current === requestId) {
+        setInsight(nextInsight);
+      }
+    } catch (error) {
+      if (assistRequestId.current === requestId) {
+        setAssistError(getErrorMessage(error));
+      }
+    } finally {
+      if (assistRequestId.current === requestId) {
+        setIsAssistLoading(false);
+      }
+    }
   }
 
   function saveInsight() {
@@ -500,10 +873,15 @@ export default function App() {
   }
 
   function submitQuestion() {
-    setAskedQuestion(question.trim());
-    setSelectedAction('ask');
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion) {
+      return;
+    }
+
     setIsAskOpen(false);
     setQuestion('');
+    void runAssist('ask', trimmedQuestion);
   }
 
   return (
@@ -511,28 +889,39 @@ export default function App() {
       <StatusBar style="dark" />
       <View style={[styles.phoneShell, Platform.OS !== 'web' && styles.nativeShell]}>
         <View style={styles.readerScreen}>
-          <ReaderHeader />
+          <ReaderHeader book={currentBook} isImportingBook={isImportingBook} onImportBook={importEpubBook} />
+
+          {importError ? <ImportErrorBanner message={importError} onDismiss={() => setImportError(null)} /> : null}
 
           <ReaderSurface
             html={readerHtml}
             onClearSelection={clearSelection}
             onSelectionMessage={handleReaderMessage}
+            paragraphs={currentBook.paragraphs}
+            scrollTarget={scrollTarget}
           />
 
           {selection ? (
             <SelectionPanel
               activeAction={selectedAction}
-              insight={visibleInsight}
+              errorMessage={assistError}
+              insight={insight}
+              isCopied={copiedSelectionId === selection.id}
+              isLoading={isAssistLoading}
               isSaved={isSaved}
               onAskMore={() => setIsAskOpen(true)}
               onChooseAction={chooseAction}
-              onMakeSimpler={() => setSelectedAction('simpler')}
+              onMakeSimpler={() => void runAssist('simpler')}
               onSave={saveInsight}
               selectionKind={selection.selectionKind}
             />
           ) : null}
 
-          <ReaderFooter savedCount={savedInsightIds.length} />
+          <ReaderFooter
+            book={currentBook}
+            onOpenTableOfContents={() => setIsTocOpen(true)}
+            savedCount={savedInsightIds.length}
+          />
 
           {isAskOpen && selection ? (
             <AskSheet
@@ -541,6 +930,14 @@ export default function App() {
               onChangeQuestion={setQuestion}
               onClose={() => setIsAskOpen(false)}
               onSubmit={submitQuestion}
+            />
+          ) : null}
+
+          {isTocOpen ? (
+            <TableOfContentsSheet
+              chapters={currentBook.chapters}
+              onClose={() => setIsTocOpen(false)}
+              onSelectChapter={jumpToChapter}
             />
           ) : null}
         </View>
@@ -553,13 +950,42 @@ function ReaderSurface({
   html,
   onClearSelection,
   onSelectionMessage,
+  paragraphs,
+  scrollTarget,
 }: {
   html: string;
   onClearSelection: () => void;
   onSelectionMessage: (message: ReaderMessage) => void;
+  paragraphs: Paragraph[];
+  scrollTarget: ScrollTarget | null;
 }) {
+  const webViewRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !scrollTarget) {
+      return;
+    }
+
+    webViewRef.current?.injectJavaScript(`
+      (function () {
+        var target = document.getElementById(${JSON.stringify(scrollTarget.paragraphId)});
+        if (target) {
+          target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+      })();
+      true;
+    `);
+  }, [scrollTarget]);
+
   if (Platform.OS === 'web') {
-    return <WebFallbackReader onClearSelection={onClearSelection} onSelectionMessage={onSelectionMessage} />;
+    return (
+      <WebFallbackReader
+        onClearSelection={onClearSelection}
+        onSelectionMessage={onSelectionMessage}
+        paragraphs={paragraphs}
+        scrollTarget={scrollTarget}
+      />
+    );
   }
 
   function handleMessage(event: WebViewMessageEvent) {
@@ -572,18 +998,16 @@ function ReaderSurface({
 
   return (
     <WebView
+      ref={webViewRef}
       automaticallyAdjustContentInsets={false}
       bounces
       javaScriptEnabled
-      menuItems={[{ key: 'copy-selection', label: 'Copy' }]}
-      onCustomMenuSelection={(event) => {
-        void Clipboard.setStringAsync(event.nativeEvent.selectedText);
-      }}
       onMessage={handleMessage}
       originWhitelist={['*']}
       scrollEnabled
       source={{ html }}
       suppressMenuItems={[
+        'copy',
         'cut',
         'paste',
         'replace',
@@ -604,10 +1028,22 @@ function ReaderSurface({
 function WebFallbackReader({
   onClearSelection,
   onSelectionMessage,
+  paragraphs,
+  scrollTarget,
 }: {
   onClearSelection: () => void;
   onSelectionMessage: (message: ReaderMessage) => void;
+  paragraphs: Paragraph[];
+  scrollTarget: ScrollTarget | null;
 }) {
+  useEffect(() => {
+    if (!scrollTarget || typeof document === 'undefined') {
+      return;
+    }
+
+    document.getElementById(scrollTarget.paragraphId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [scrollTarget]);
+
   useEffect(() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
       return undefined;
@@ -658,7 +1094,7 @@ function WebFallbackReader({
       document.removeEventListener('mouseup', handleSelection);
       document.removeEventListener('touchend', handleSelection);
     };
-  }, [onSelectionMessage]);
+  }, [onSelectionMessage, paragraphs]);
 
   return (
     <Pressable accessible={false} onPress={onClearSelection} style={styles.readingLayer}>
@@ -668,8 +1104,8 @@ function WebFallbackReader({
         showsVerticalScrollIndicator={false}
       >
         {paragraphs.map((paragraph) => (
-          <View key={paragraph.id} style={styles.paragraphBlock}>
-            <Text selectable style={styles.paragraph}>
+          <View key={paragraph.id} nativeID={paragraph.id} style={getReaderBlockStyle(paragraph)}>
+            <Text selectable style={getReaderTextStyle(paragraph)}>
               {getParagraphText(paragraph)}
             </Text>
           </View>
@@ -679,7 +1115,57 @@ function WebFallbackReader({
   );
 }
 
-function ReaderHeader() {
+function getReaderBlockStyle(paragraph: Paragraph) {
+  const blockKind = getReaderBlockKind(paragraph);
+
+  switch (blockKind) {
+    case 'chapterNumber':
+      return [styles.paragraphBlock, styles.paragraphBlockChapterNumber];
+    case 'chapterTitle':
+      return [styles.paragraphBlock, styles.paragraphBlockChapterTitle];
+    case 'sectionHeading':
+      return [styles.paragraphBlock, styles.paragraphBlockSectionHeading];
+    case 'subheading':
+      return [styles.paragraphBlock, styles.paragraphBlockSubheading];
+    case 'quote':
+      return [styles.paragraphBlock, styles.paragraphBlockQuote];
+    case 'listItem':
+      return [styles.paragraphBlock, styles.paragraphBlockListItem];
+    default:
+      return styles.paragraphBlock;
+  }
+}
+
+function getReaderTextStyle(paragraph: Paragraph) {
+  const blockKind = getReaderBlockKind(paragraph);
+
+  switch (blockKind) {
+    case 'chapterNumber':
+      return [styles.paragraph, styles.paragraphChapterNumber];
+    case 'chapterTitle':
+      return [styles.paragraph, styles.paragraphChapterTitle];
+    case 'sectionHeading':
+      return [styles.paragraph, styles.paragraphSectionHeading];
+    case 'subheading':
+      return [styles.paragraph, styles.paragraphSubheading];
+    case 'quote':
+      return [styles.paragraph, styles.paragraphQuote];
+    case 'listItem':
+      return [styles.paragraph, styles.paragraphListItem];
+    default:
+      return styles.paragraph;
+  }
+}
+
+function ReaderHeader({
+  book,
+  isImportingBook,
+  onImportBook,
+}: {
+  book: ReaderBook;
+  isImportingBook: boolean;
+  onImportBook: () => void;
+}) {
   return (
     <View style={styles.header}>
       <Pressable accessibilityLabel="Back" accessibilityRole="button" style={styles.headerIconButton}>
@@ -699,15 +1185,43 @@ function ReaderHeader() {
         <Pressable accessibilityLabel="Text settings" accessibilityRole="button" style={styles.headerIconButton}>
           <Type color={colors.ink} size={19} strokeWidth={2} />
         </Pressable>
-        <Pressable accessibilityLabel="More options" accessibilityRole="button" style={styles.headerIconButton}>
-          <MoreHorizontal color={colors.ink} size={20} strokeWidth={2} />
+        <Pressable
+          accessibilityLabel="Import EPUB"
+          accessibilityRole="button"
+          disabled={isImportingBook}
+          onPress={onImportBook}
+          style={[styles.headerIconButton, isImportingBook && styles.disabledButton]}
+        >
+          {isImportingBook ? (
+            <ActivityIndicator color={colors.sageDark} size="small" />
+          ) : (
+            <Upload color={colors.ink} size={19} strokeWidth={2} />
+          )}
         </Pressable>
       </View>
     </View>
   );
 }
 
-function ReaderFooter({ savedCount }: { savedCount: number }) {
+function ImportErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onDismiss} style={styles.importErrorBanner}>
+      <Text numberOfLines={2} style={styles.importErrorText}>
+        {message}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ReaderFooter({
+  book,
+  onOpenTableOfContents,
+  savedCount,
+}: {
+  book: ReaderBook;
+  onOpenTableOfContents: () => void;
+  savedCount: number;
+}) {
   return (
     <View style={styles.footer}>
       <View style={styles.progressMeta}>
@@ -719,7 +1233,12 @@ function ReaderFooter({ savedCount }: { savedCount: number }) {
         <View style={styles.progressThumb} />
       </View>
       <View style={styles.bottomNav}>
-        <Pressable accessibilityLabel="Table of contents" accessibilityRole="button" style={styles.bottomIcon}>
+        <Pressable
+          accessibilityLabel="Table of contents"
+          accessibilityRole="button"
+          onPress={onOpenTableOfContents}
+          style={styles.bottomIcon}
+        >
           <List color={colors.ink} size={21} strokeWidth={2} />
         </Pressable>
         <Pressable accessibilityLabel={`${savedCount} saved notes`} accessibilityRole="button" style={styles.bottomIcon}>
@@ -738,9 +1257,47 @@ function ReaderFooter({ savedCount }: { savedCount: number }) {
   );
 }
 
+function TableOfContentsSheet({
+  chapters,
+  onClose,
+  onSelectChapter,
+}: {
+  chapters: ReaderChapter[];
+  onClose: () => void;
+  onSelectChapter: (chapter: ReaderChapter) => void;
+}) {
+  return (
+    <View style={styles.sheetLayer}>
+      <Pressable accessibilityRole="button" style={styles.sheetScrim} onPress={onClose} />
+      <View style={styles.tocSheet}>
+        <View style={styles.sheetHandle} />
+        <Text style={styles.tocTitle}>Contents</Text>
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.tocList}>
+          {chapters.map((chapter, index) => (
+            <Pressable
+              key={chapter.id}
+              accessibilityRole="button"
+              onPress={() => onSelectChapter(chapter)}
+              style={({ pressed }) => [styles.tocItem, pressed && styles.pressed]}
+            >
+              <Text style={styles.tocIndex}>{index + 1}</Text>
+              <Text numberOfLines={2} style={styles.tocItemText}>
+                {chapter.title}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
 function SelectionPanel({
   activeAction,
+  errorMessage,
   insight,
+  isCopied,
+  isLoading,
   isSaved,
   onAskMore,
   onChooseAction,
@@ -749,19 +1306,31 @@ function SelectionPanel({
   selectionKind,
 }: {
   activeAction: InsightAction | null;
+  errorMessage: string | null;
   insight: Insight | null;
+  isCopied: boolean;
+  isLoading: boolean;
   isSaved: boolean;
   onAskMore: () => void;
-  onChooseAction: (action: QuickAction) => void;
+  onChooseAction: (action: SelectionAction) => void;
   onMakeSimpler: () => void;
   onSave: () => void;
   selectionKind: SelectionKind;
 }) {
   return (
     <Pressable accessible={false} onPress={stopPressPropagation} style={styles.selectionPanel}>
-      <QuickActionMenu activeAction={activeAction} onChooseAction={onChooseAction} selectionKind={selectionKind} />
+      <QuickActionMenu
+        activeAction={activeAction}
+        isCopied={isCopied}
+        onChooseAction={onChooseAction}
+        selectionKind={selectionKind}
+      />
 
-      {insight ? (
+      {isLoading ? <LoadingInsightCard /> : null}
+
+      {errorMessage && !isLoading ? <ErrorInsightCard message={errorMessage} /> : null}
+
+      {insight && !isLoading ? (
         <InsightCard
           insight={insight}
           isSaved={isSaved}
@@ -776,35 +1345,67 @@ function SelectionPanel({
 
 function QuickActionMenu({
   activeAction,
+  isCopied,
   onChooseAction,
   selectionKind,
 }: {
   activeAction: InsightAction | null;
-  onChooseAction: (action: QuickAction) => void;
+  isCopied: boolean;
+  onChooseAction: (action: SelectionAction) => void;
   selectionKind: SelectionKind;
 }) {
   return (
     <View style={styles.actionMenu}>
-      {quickActions.map(({ action, icon: Icon, label }) => {
-        const isActive = activeAction === action;
-        const visibleLabel = action === 'explain' && selectionKind === 'word' ? 'Define' : label;
+      {selectionActions.map(({ action, icon: Icon, label }) => {
+        const isCopiedAction = action === 'copy' && isCopied;
+        const isActive = !isCopied && activeAction === action;
+        const visibleLabel =
+          action === 'explain' && selectionKind === 'word' ? 'Define' : isCopiedAction ? 'Copied' : label;
+        const buttonColor = isActive || isCopiedAction ? colors.sageDark : colors.ink;
 
         return (
           <Pressable
             key={action}
+            accessibilityLabel={visibleLabel}
             accessibilityRole="button"
             onPress={() => onChooseAction(action)}
             style={({ pressed }) => [
               styles.actionButton,
-              isActive && styles.actionButtonActive,
+              (isActive || isCopiedAction) && styles.actionButtonActive,
               pressed && styles.pressed,
             ]}
           >
-            <Icon color={isActive ? colors.sageDark : colors.ink} size={20} strokeWidth={1.8} />
-            <Text style={[styles.actionText, isActive && styles.actionTextActive]}>{visibleLabel}</Text>
+            <Icon color={buttonColor} size={20} strokeWidth={1.8} />
+            <Text style={[styles.actionText, (isActive || isCopiedAction) && styles.actionTextActive]}>
+              {visibleLabel}
+            </Text>
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+function LoadingInsightCard() {
+  return (
+    <View style={styles.insightCard}>
+      <View style={styles.insightHeader}>
+        <ActivityIndicator color={colors.clay} size="small" />
+        <Text style={styles.insightEyebrow}>Thinking</Text>
+      </View>
+      <Text style={styles.insightBody}>Reading the selected passage...</Text>
+    </View>
+  );
+}
+
+function ErrorInsightCard({ message }: { message: string }) {
+  return (
+    <View style={[styles.insightCard, styles.errorCard]}>
+      <View style={styles.insightHeader}>
+        <HelpCircle color={colors.error} size={17} strokeWidth={2} />
+        <Text style={[styles.insightEyebrow, styles.errorText]}>AI unavailable</Text>
+      </View>
+      <Text style={[styles.insightBody, styles.errorText]}>{message}</Text>
     </View>
   );
 }
@@ -920,6 +1521,9 @@ const colors = {
   background: '#f3f1ec',
   card: '#ffffff',
   clay: '#8f6c3d',
+  error: '#9c2f2f',
+  errorBackground: '#fff1f1',
+  errorBorder: '#e7b6b6',
   hairline: '#e4dfd6',
   ink: '#171715',
   mutedInk: '#6d6860',
@@ -990,6 +1594,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 38,
   },
+  disabledButton: {
+    opacity: 0.55,
+  },
   headerTools: {
     flexDirection: 'row',
   },
@@ -1016,18 +1623,90 @@ const styles = StyleSheet.create({
   },
   readingContent: {
     paddingBottom: 136,
-    paddingHorizontal: 27,
-    paddingTop: 10,
+    paddingHorizontal: 28,
+    paddingTop: 18,
   },
   paragraphBlock: {
     marginBottom: 22,
   },
+  paragraphBlockChapterNumber: {
+    marginBottom: 52,
+    marginTop: 46,
+  },
+  paragraphBlockChapterTitle: {
+    marginBottom: 52,
+  },
+  paragraphBlockSectionHeading: {
+    marginBottom: 18,
+    marginTop: 32,
+  },
+  paragraphBlockSubheading: {
+    marginBottom: 16,
+    marginTop: 26,
+  },
+  paragraphBlockQuote: {
+    borderLeftColor: '#d8d1c4',
+    borderLeftWidth: 2,
+    marginBottom: 24,
+    marginTop: 22,
+    paddingLeft: 14,
+  },
+  paragraphBlockListItem: {
+    marginBottom: 14,
+    marginLeft: 18,
+  },
   paragraph: {
     color: colors.ink,
     fontFamily: readerFont,
-    fontSize: 16,
+    fontSize: 17,
     letterSpacing: 0,
+    lineHeight: 26,
+  },
+  paragraphChapterNumber: {
+    fontSize: 30,
+    fontWeight: '700',
+    lineHeight: 33,
+    textAlign: 'center',
+  },
+  paragraphChapterTitle: {
+    fontSize: 29,
+    fontWeight: '700',
+    lineHeight: 31,
+    textAlign: 'center',
+  },
+  paragraphSectionHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 23,
+  },
+  paragraphSubheading: {
+    fontSize: 17,
+    fontWeight: '400',
+    lineHeight: 23,
+  },
+  paragraphQuote: {
+    color: '#3f3b34',
+    fontSize: 16,
+    fontStyle: 'italic',
+    lineHeight: 24,
+  },
+  paragraphListItem: {
+    fontSize: 17,
     lineHeight: 25,
+  },
+  importErrorBanner: {
+    backgroundColor: colors.errorBackground,
+    borderBottomColor: colors.errorBorder,
+    borderBottomWidth: 1,
+    paddingHorizontal: 27,
+    paddingVertical: 9,
+  },
+  importErrorText: {
+    color: colors.error,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0,
+    lineHeight: 16,
   },
   selectionPanel: {
     backgroundColor: 'transparent',
@@ -1088,6 +1767,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
+  errorCard: {
+    backgroundColor: colors.errorBackground,
+    borderColor: colors.errorBorder,
+  },
   insightHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1106,6 +1789,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0,
     lineHeight: 18,
+  },
+  errorText: {
+    color: colors.error,
   },
   insightActions: {
     flexDirection: 'row',
@@ -1208,6 +1894,54 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0,
+  },
+  tocSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    maxHeight: '62%',
+    paddingBottom: 18,
+    paddingHorizontal: 16,
+    paddingTop: 9,
+    shadowColor: colors.shadow,
+    shadowOffset: { height: -8, width: 0 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+  },
+  tocTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0,
+    marginBottom: 8,
+  },
+  tocList: {
+    maxHeight: 360,
+  },
+  tocItem: {
+    alignItems: 'center',
+    borderBottomColor: colors.hairline,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: 9,
+  },
+  tocIndex: {
+    color: colors.mutedInk,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0,
+    textAlign: 'right',
+    width: 24,
+  },
+  tocItemText: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0,
+    lineHeight: 18,
   },
   sheetLayer: {
     ...StyleSheet.absoluteFillObject,
