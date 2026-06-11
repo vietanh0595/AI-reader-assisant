@@ -56,20 +56,27 @@ class Settings:
         return self.openai_api_key
 
     def require_oidc_settings(self) -> OidcSettings:
+        issuer_url = self.oidc_issuer_url
+        audience = self.oidc_audience
+        jwks_url = self.oidc_jwks_url
         configured_values = {
-            "OIDC_ISSUER_URL": self.oidc_issuer_url,
-            "OIDC_AUDIENCE": self.oidc_audience,
-            "OIDC_JWKS_URL": self.oidc_jwks_url,
+            "OIDC_ISSUER_URL": issuer_url,
+            "OIDC_AUDIENCE": audience,
+            "OIDC_JWKS_URL": jwks_url,
         }
         missing_names = [name for name, value in configured_values.items() if not value]
 
         if missing_names:
             raise RuntimeError(f"Missing required OIDC settings: {', '.join(missing_names)}")
 
+        assert issuer_url is not None
+        assert audience is not None
+        assert jwks_url is not None
+
         return OidcSettings(
-            issuer_url=self.oidc_issuer_url,
-            audience=self.oidc_audience,
-            jwks_url=self.oidc_jwks_url,
+            issuer_url=issuer_url,
+            audience=audience,
+            jwks_url=jwks_url,
         )
 
 
