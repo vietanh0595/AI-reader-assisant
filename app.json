@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vietanh.aibookreader",
+      "infoPlist": {
+        "NSCameraUsageDescription": "AI Book Reader uses the camera to scan book and document pages for OCR."
+      }
     },
     "android": {
       "adaptiveIcon": {

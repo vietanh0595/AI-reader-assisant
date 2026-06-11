@@ -174,7 +174,7 @@ function assertEpubAsset(asset: DocumentPickerAsset) {
   const isEpubMime = asset.mimeType === 'application/epub+zip';
 
   if (!isEpubName && !isEpubMime) {
-    throw new Error('Please choose an EPUB file. PDF import is not supported yet.');
+    throw new Error('Only EPUB import is available right now. PDF, image, and scan import will come with the OCR pipeline.');
   }
 }
 

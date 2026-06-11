@@ -108,21 +108,35 @@ npx expo start --tunnel
 - Expo + React Native + TypeScript.
 - Sample reading passage.
 - EPUB import from the device file picker.
+- iOS PDF import with PDFKit text extraction, outline navigation, page-aware
+  progress, and local Vision OCR fallback for image-only pages.
+- Camera scan capture for one-page OCR imports.
+- On-device Apple Vision OCR for iOS camera scans, with paragraph grouping and
+  normalized source bounding boxes.
+- Imported EPUB content is persisted locally after parsing.
+- Library screen for multiple imported books, per-book resume progress, note counts, and imported-book removal.
 - Table of contents sheet for imported EPUB chapter navigation using EPUB nav/NCX `href#anchor` targets when available.
 - Basic EPUB block styling for chapter titles, section headings, quotes, lists, and body text.
 - WebView-based native reader surface on iOS/Android for real text selection.
 - Native selection is captured into an app highlight so iOS menus do not stay on screen.
 - Web fallback reader for browser preview.
+- Last visible paragraph is tracked and restored as the reading location for imported books.
 - FastAPI backend for OpenAI-backed explanations.
 - Reader-style chrome with title, text settings, page progress, and bottom navigation.
 - Quick actions for `Explain`, `Example`, `Rephrase`, `Ask`, and `Copy`.
 - Inline explanation card designed to keep the reader on the page.
-- Optional ask-more sheet and save count.
+- Optional ask-more sheet and saved-notes sheet.
+- Saved explanations are persisted per book, can be filtered, searched, edited with a personal note, copied/exported to the clipboard, deleted, and reopened from the bottom bookmark tab.
+- Reader search from the bottom navigation supports `Book`, `Notes`, and `All` scopes with paragraph-level jump results and saved-note jump results.
+- Reader paragraphs, reading locations, search hits, saved notes, and copied note exports carry source metadata so future EPUB, PDF, scanned document, and sample content can share one anchor model.
+- iOS scans are OCRed locally with Apple Vision and loaded into the same reader/search/save flow as EPUB/sample content. The backend OCR route remains a fallback for other platforms.
+- Unsupported image file imports direct the user to the camera scanner instead of producing parser errors.
 
 ## Next Steps
 
-1. Persist imported books, highlights, notes, and saved explanations.
-2. Persist chapter position and restore the last opened location.
-3. Improve EPUB table-of-contents display for nested sections.
-4. Add model routing so quick explanations stay cheap and deep discussion is deliberate.
-5. Add PDF import after the EPUB reading flow is stable.
+1. Improve EPUB table-of-contents display for nested sections.
+2. Add model routing so quick explanations stay cheap and deep discussion is deliberate.
+3. Add file/share export for saved notes beyond clipboard copy.
+4. Replace JSON-file persistence with a scalable database before large scanned/PDF libraries.
+5. Add page thumbnails and source-PDF navigation to the PDF reader flow.
+6. Expand camera OCR from one captured page to a multi-page scan workflow.

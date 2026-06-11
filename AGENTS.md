@@ -12,17 +12,53 @@ Current architecture:
 - Native reader: `react-native-webview` for iOS/Android text selection.
 - Backend: FastAPI under `backend/app`.
 - AI endpoint: `POST /ai/assist`.
+- OCR endpoint: `POST /ocr/extract` remains available as a cloud fallback.
+- iOS camera scans use the local Expo module under `modules/apple-vision-ocr`
+  and Apple's Vision `VNRecognizeTextRequest`, so normal iPhone scans do not
+  upload the page or depend on OpenAI OCR.
+- iOS PDF imports use the local Expo module under `modules/apple-pdf-import`.
+  PDFKit extracts selectable text and document outlines; image-only pages fall
+  back to on-device Vision OCR. Imported blocks retain page labels, page indices,
+  and normalized bounding boxes.
+- PDF reflow uses line geometry and relative text height for headings. Dense
+  all-caps contents pages are emitted as compact headings/list items, PDFKit
+  fragments on the same visual line are merged, and decorative cover/publisher
+  signup pages are omitted from the text stream.
 - EPUB import/parser: `epub.ts`.
 - Imported EPUB content is converted into paragraph blocks with `blockKind`.
 - Table of contents navigation uses EPUB nav/NCX `href#anchor` targets when available.
+- Reader state now persists as a small local library of books, not only one
+  current book. Each library item stores its own reading location and saved
+  insights.
+- Bottom navigation includes scoped search across Book, Notes, or All with
+  paragraph-level jump results and saved-note jump results.
+- Saved notes can be filtered by action type, searched, edited with a personal
+  note, copied/exported to the clipboard, deleted, and reopened from the
+  saved-notes sheet.
+- Reader document source typing now allows `epub`, `pdf`, `scan`, and `sample`
+  sources. Reader paragraphs, reading locations, search hits, saved notes, and
+  copied note exports carry source references so OCR/PDF chunks can later point
+  back to pages, blocks, or bounding boxes.
+- Unsupported image file imports show an intentional camera-scan message instead
+  of falling through to EPUB parser errors.
+- Camera scan capture is implemented for one-page OCR imports. On iOS, captured
+  pages are recognized on-device with Apple Vision, grouped into paragraphs,
+  and loaded as `scan` source books in the same reader/search/save flow. Other
+  platforms retain the backend OCR fallback.
 
 Current limitations:
 
-- Imported books are not persisted yet.
-- Reading position is not persisted yet.
-- PDF import is not supported yet.
+- Local persistence is still MVP JSON-file storage, not a scalable library database.
+  Source references are stored there for now, but large scanned/PDF libraries
+  should move to a database.
 - EPUB rendering is basic and does not implement full Apple Books-style pagination.
 - Table of contents display is flat, even when the EPUB has nested sections.
+- Saved-note export is clipboard-based only; file/share export is not implemented yet.
+- PDF import is currently iOS-only. Image-only PDFs are limited to 40 OCR pages
+  per import so a large scanned book does not block the app for several minutes.
+- OCR is one captured page at a time; multi-page scan/PDF workflows and page
+  thumbnails are not implemented yet. Apple Vision scan blocks include
+  normalized bounding boxes for future source-image navigation.
 
 ## Local Setup
 

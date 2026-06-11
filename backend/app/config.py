@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import lru_cache
 import os
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -14,9 +17,9 @@ PROJECT_ROOT = BACKEND_DIR.parent
 
 @dataclass(frozen=True)
 class Settings:
-    openai_api_key: str | None
+    openai_api_key: Optional[str]
     openai_model: str
-    openai_reasoning_effort: str | None
+    openai_reasoning_effort: Optional[str]
     cors_allow_origins: tuple[str, ...]
 
     @classmethod
@@ -37,7 +40,7 @@ class Settings:
         return self.openai_api_key
 
 
-def _read_optional_env(name: str) -> str | None:
+def _read_optional_env(name: str) -> Optional[str]:
     value = os.getenv(name)
 
     if value is None:
