@@ -3,6 +3,7 @@
     "name": "AI Book Reader",
     "slug": "ai-book-reader",
     "version": "1.0.0",
+    "scheme": "aibookreader",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

@@ -17,6 +17,8 @@ import {
   HelpCircle,
   Library as LibraryIcon,
   List,
+  LogIn,
+  LogOut,
   LucideProps,
   MessageCircle,
   Pencil,
@@ -27,9 +29,12 @@ import {
   Trash2,
   Type,
   Upload,
+  User,
   X,
 } from 'lucide-react-native';
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
+import { AuthProvider, useAuth } from './src/auth/AuthProvider';
+import { SignInSheet } from './src/components/SignInSheet';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -2302,7 +2307,11 @@ function getReaderHtmlTag(blockKind: ReaderBlockKind) {
   }
 }
 
-export default function App() {
+function ReaderApp() {
+  const { error: authError, isAuthenticated, isLoading: isAuthLoading, signIn, signOut } = useAuth();
+  const [pendingAuthenticatedAction, setPendingAuthenticatedAction] = useState<'import' | 'scan' | null>(null);
+  const [isSignInOpen, setIsSignInOpen] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([sampleLibraryItem]);
   const [activeBookId, setActiveBookId] = useState(sampleLibraryItem.id);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -2741,6 +2750,12 @@ export default function App() {
   }
 
   async function importBook() {
+    if (!isAuthenticated) {
+      setPendingAuthenticatedAction('import');
+      setIsSignInOpen(true);
+      return;
+    }
+
     setImportError(null);
     setIsImportingBook(true);
 
@@ -2788,6 +2803,12 @@ export default function App() {
   }
 
   async function scanDocumentPage() {
+    if (!isAuthenticated) {
+      setPendingAuthenticatedAction('scan');
+      setIsSignInOpen(true);
+      return;
+    }
+
     setImportError(null);
     setScanStage('capturing');
 
@@ -3090,6 +3111,7 @@ export default function App() {
             <LibraryScreen
               activeBookId={activeBookId}
               errorMessage={importError}
+              isAuthenticated={isAuthenticated}
               isImportingBook={isImportingBook}
               isScanningDocument={isScanningDocument}
               items={libraryItems}
@@ -3098,6 +3120,8 @@ export default function App() {
               onImportBook={importBook}
               onOpenBook={openLibraryItem}
               onScanDocument={scanDocumentPage}
+              onSignIn={() => setIsSignInOpen(true)}
+              onSignOut={signOut}
               scanStageLabel={scanStageLabel}
             />
           ) : (
@@ -3231,13 +3255,48 @@ export default function App() {
           )}
         </View>
       </SafeAreaView>
+
+      {isSignInOpen ? (
+        <SignInSheet
+          error={authError}
+          isLoading={isSigningIn}
+          onClose={() => {
+            setIsSignInOpen(false);
+            setPendingAuthenticatedAction(null);
+          }}
+          onSignIn={async () => {
+            setIsSigningIn(true);
+            await signIn();
+            setIsSigningIn(false);
+            setIsSignInOpen(false);
+            if (pendingAuthenticatedAction === 'import') {
+              setPendingAuthenticatedAction(null);
+              void importBook();
+            } else if (pendingAuthenticatedAction === 'scan') {
+              setPendingAuthenticatedAction(null);
+              void scanDocumentPage();
+            } else {
+              setPendingAuthenticatedAction(null);
+            }
+          }}
+        />
+      ) : null}
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ReaderApp />
+    </AuthProvider>
   );
 }
 
 function LibraryScreen({
   activeBookId,
   errorMessage,
+  isAuthenticated,
   isImportingBook,
   isScanningDocument,
   items,
@@ -3246,10 +3305,13 @@ function LibraryScreen({
   onImportBook,
   onOpenBook,
   onScanDocument,
+  onSignIn,
+  onSignOut,
   scanStageLabel,
 }: {
   activeBookId: string;
   errorMessage: string | null;
+  isAuthenticated: boolean;
   isImportingBook: boolean;
   isScanningDocument: boolean;
   items: LibraryItem[];
@@ -3258,6 +3320,8 @@ function LibraryScreen({
   onImportBook: () => void;
   onOpenBook: (bookId: string) => void;
   onScanDocument: () => void;
+  onSignIn: () => void;
+  onSignOut: () => void;
   scanStageLabel: string | null;
 }) {
   const sortedItems = [...items].sort((firstItem, secondItem) =>
@@ -3272,6 +3336,25 @@ function LibraryScreen({
           <Text style={styles.libraryTitle}>Library</Text>
         </View>
         <View style={styles.libraryHeaderActions}>
+          {isAuthenticated ? (
+            <Pressable
+              accessibilityLabel="Sign out"
+              accessibilityRole="button"
+              onPress={onSignOut}
+              style={styles.libraryAccountButton}
+            >
+              <LogOut color={colors.ink} size={18} strokeWidth={2} />
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityLabel="Sign in"
+              accessibilityRole="button"
+              onPress={onSignIn}
+              style={styles.libraryAccountButton}
+            >
+              <LogIn color={colors.ink} size={18} strokeWidth={2} />
+            </Pressable>
+          )}
           <Pressable
             accessibilityLabel="Scan page with camera"
             accessibilityRole="button"
@@ -4683,6 +4766,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  libraryAccountButton: {
+    alignItems: 'center',
+    borderColor: '#d0cbc1',
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 11,
   },
   libraryScanButton: {
     alignItems: 'center',
