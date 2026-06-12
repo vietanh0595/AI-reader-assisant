@@ -248,7 +248,7 @@ services:
       POSTGRES_PASSWORD: reader
       POSTGRES_USER: reader
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reader -d reader"]
       interval: 2s
@@ -264,7 +264,7 @@ services:
       POSTGRES_PASSWORD: reader
       POSTGRES_USER: reader
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     profiles: ["test"]
 
 volumes:
@@ -274,8 +274,8 @@ volumes:
 Run:
 
 ```bash
-docker compose up -d postgres
-TEST_DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5432/reader pytest -c backend/pytest.ini backend/tests/integration/test_identity_models.py -v
+docker compose --profile test up -d postgres-test
+TEST_DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5433/reader_test pytest -c backend/pytest.ini backend/tests/integration/test_identity_models.py -v
 ```
 
 Expected: FAIL because database modules and fixtures do not exist.
@@ -355,7 +355,7 @@ class ExternalIdentity(UuidTimestampMixin, Base):
     user: Mapped[User] = relationship(back_populates="identities")
 ```
 
-Add `db_session` in `backend/tests/conftest.py` using `TEST_DATABASE_URL`, creating and dropping metadata around the integration test session.
+Add `db_session` in `backend/tests/conftest.py` using `TEST_DATABASE_URL`. Prepare the session-scoped test database with `alembic upgrade head`, then wrap each test in an outer connection transaction so test-level commits are rolled back during fixture cleanup.
 
 - [ ] **Step 4: Add Alembic migration with pgvector enabled**
 
@@ -391,7 +391,7 @@ Run:
 
 ```bash
 DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5432/reader alembic -c backend/alembic.ini upgrade head
-TEST_DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5432/reader pytest -c backend/pytest.ini backend/tests/integration/test_identity_models.py -v
+TEST_DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5433/reader_test pytest -c backend/pytest.ini backend/tests/integration/test_identity_models.py -v
 ```
 
 Expected: migration succeeds and 1 test passes.
