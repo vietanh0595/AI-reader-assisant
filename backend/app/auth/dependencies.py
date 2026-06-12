@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..db.models import User
-from .jwt import InvalidAuthTokenError
+from .jwt import AuthProviderUnavailableError, InvalidAuthTokenError
 from .repository import resolve_identity
 
 
@@ -28,6 +28,11 @@ def get_current_user(
 
     try:
         claims = request.app.state.jwt_validator.validate(credentials.credentials)
+    except AuthProviderUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in is temporarily unavailable.",
+        ) from None
     except InvalidAuthTokenError:
         raise _unauthorized() from None
 

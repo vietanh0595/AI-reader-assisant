@@ -8,6 +8,7 @@ from uuid import uuid4
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt import PyJWKClientConnectionError, PyJWKSetError
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -31,6 +32,27 @@ def make_validator(monkeypatch, public_key):
             return SimpleNamespace(key=public_key)
 
     monkeypatch.setattr(auth_jwt, "PyJWKClient", FakeJwkClient, raising=False)
+    return auth_jwt.JwtValidator(
+        OidcSettings(
+            issuer_url="https://login.example.com/",
+            audience="ai-reader-api",
+            jwks_url="https://login.example.com/.well-known/jwks.json",
+        )
+    )
+
+
+def make_unavailable_validator(monkeypatch, provider_error):
+    from backend.app.auth import jwt as auth_jwt
+
+    class UnavailableJwkClient:
+        def __init__(self, jwks_url: str, cache_keys: bool):
+            assert jwks_url == "https://login.example.com/.well-known/jwks.json"
+            assert cache_keys is True
+
+        def get_signing_key_from_jwt(self, _token: str):
+            raise provider_error
+
+    monkeypatch.setattr(auth_jwt, "PyJWKClient", UnavailableJwkClient)
     return auth_jwt.JwtValidator(
         OidcSettings(
             issuer_url="https://login.example.com/",
@@ -227,6 +249,55 @@ def test_jwt_validator_requires_standard_oidc_claims(monkeypatch, rsa_private_ke
         validator.validate(token)
 
 
+@pytest.mark.parametrize("claim_name", ["iat", "exp"])
+def test_jwt_validator_normalizes_malformed_temporal_claim_types(
+    monkeypatch,
+    rsa_private_key,
+    claim_name,
+):
+    from backend.app.auth.jwt import InvalidAuthTokenError
+
+    validator = make_validator(monkeypatch, rsa_private_key.public_key())
+    token = encode_token(rsa_private_key, **{claim_name: []})
+
+    with pytest.raises(InvalidAuthTokenError):
+        validator.validate(token)
+
+
+def test_jwt_validator_normalizes_value_errors(monkeypatch, rsa_private_key):
+    from backend.app.auth import jwt as auth_jwt
+    from backend.app.auth.jwt import InvalidAuthTokenError
+
+    validator = make_validator(monkeypatch, rsa_private_key.public_key())
+    monkeypatch.setattr(
+        auth_jwt.jwt,
+        "decode",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad claim")),
+    )
+
+    with pytest.raises(InvalidAuthTokenError):
+        validator.validate(encode_token(rsa_private_key))
+
+
+@pytest.mark.parametrize(
+    "provider_error",
+    [
+        PyJWKClientConnectionError("private network details"),
+        PyJWKSetError("invalid provider key set"),
+    ],
+)
+def test_jwt_validator_classifies_jwks_availability_errors(
+    monkeypatch,
+    provider_error,
+):
+    from backend.app.auth.jwt import AuthProviderUnavailableError
+
+    validator = make_unavailable_validator(monkeypatch, provider_error)
+
+    with pytest.raises(AuthProviderUnavailableError):
+        validator.validate("signed-token")
+
+
 def test_auth_me_requires_bearer_token(test_client):
     response = test_client.get("/auth/me")
 
@@ -277,6 +348,50 @@ def test_auth_me_normalizes_invalid_token_errors(test_app, test_client):
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json() == {"detail": "Invalid authentication credentials."}
+
+
+@pytest.mark.parametrize("claim_name", ["iat", "exp"])
+def test_auth_me_rejects_malformed_temporal_claims(
+    test_app,
+    test_client,
+    monkeypatch,
+    rsa_private_key,
+    claim_name,
+):
+    test_app.state.jwt_validator = make_validator(
+        monkeypatch,
+        rsa_private_key.public_key(),
+    )
+    token = encode_token(rsa_private_key, **{claim_name: []})
+
+    response = test_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid authentication credentials."}
+
+
+def test_auth_me_reports_jwks_provider_unavailable(
+    test_app,
+    test_client,
+    monkeypatch,
+):
+    test_app.state.jwt_validator = make_unavailable_validator(
+        monkeypatch,
+        PyJWKClientConnectionError("private upstream network details"),
+    )
+
+    response = test_client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer signed-token"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Sign-in is temporarily unavailable."}
+    assert "private upstream network details" not in response.text
 
 
 @pytest.mark.integration

@@ -10,4 +10,4 @@ router = APIRouter(prefix="/auth")
 
 @router.get("/me", response_model=CurrentUserResponse)
 def get_me(current_user: User = Depends(get_current_user)) -> CurrentUserResponse:
-    return CurrentUserResponse(user_id=current_user.id)
+    return CurrentUserResponse(userId=current_user.id)
