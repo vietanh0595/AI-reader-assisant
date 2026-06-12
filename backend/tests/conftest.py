@@ -7,9 +7,13 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
+
+from backend.app.config import Settings
 
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://reader:reader@localhost:5433/reader_test"
@@ -64,3 +68,30 @@ def db_session(migrated_database: Engine) -> Generator[Session, None, None]:
         if transaction.is_active:
             transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def app_settings() -> Settings:
+    return Settings(
+        openai_api_key=None,
+        openai_model="gpt-5-mini",
+        openai_reasoning_effort="minimal",
+        cors_allow_origins=("*",),
+        database_url=get_test_database_url(),
+        oidc_issuer_url=None,
+        oidc_audience=None,
+        oidc_jwks_url=None,
+    )
+
+
+@pytest.fixture
+def test_app(app_settings: Settings) -> FastAPI:
+    from backend.app.main import create_app
+
+    return create_app(app_settings)
+
+
+@pytest.fixture
+def test_client(test_app: FastAPI) -> Generator[TestClient, None, None]:
+    with TestClient(test_app, raise_server_exceptions=False) as client:
+        yield client
