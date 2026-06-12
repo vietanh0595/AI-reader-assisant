@@ -195,6 +195,7 @@ class IndexingService:
         job = IndexJob(
             index_version_id=version_id,
             status=JobStatus.QUEUED,
+            next_attempt_at=datetime.now(tz=timezone.utc),
         )
         self._session.add(job)
         self._session.commit()
