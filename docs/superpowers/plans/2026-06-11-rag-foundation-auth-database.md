@@ -394,7 +394,7 @@ DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5432/reader alembic -c
 TEST_DATABASE_URL=postgresql+psycopg://reader:reader@localhost:5433/reader_test pytest -c backend/pytest.ini backend/tests/integration/test_identity_models.py -v
 ```
 
-Expected: migration succeeds and 1 test passes.
+Expected: migration succeeds and all 8 integration tests pass.
 
 - [ ] **Step 6: Commit**
 
