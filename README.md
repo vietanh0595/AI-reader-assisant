@@ -29,6 +29,36 @@ The iOS command needs either macOS tooling or Expo's iOS device workflow. From W
 
 The Expo app calls a local FastAPI backend for AI responses. Keep the OpenAI key on the backend only.
 
+### macOS / Linux
+
+```bash
+docker compose up -d postgres
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` and fill in your real values (at minimum `OPENAI_API_KEY`). Then run the migration:
+
+```bash
+alembic -c backend/alembic.ini upgrade head
+```
+
+Start the API:
+
+```bash
+npm run backend
+```
+
+Check it:
+
+```bash
+curl http://localhost:8000/health
+```
+
+### Windows (PowerShell)
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -36,31 +66,36 @@ python -m pip install -r backend\requirements.txt
 Copy-Item backend\.env.example backend\.env
 ```
 
-Edit `backend\.env` and set:
-
-```env
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-5-mini
-OPENAI_REASONING_EFFORT=minimal
-CORS_ALLOW_ORIGINS=*
-```
-
-For Expo Go on iPhone, keep the frontend API URL in the root `.env`:
-
-```env
-EXPO_PUBLIC_API_BASE_URL=http://<your-windows-ip>:8000
-```
-
-Start the API:
+Edit `backend\.env` and set `OPENAI_API_KEY`. Then:
 
 ```powershell
 npm run backend
+Invoke-WebRequest http://localhost:8000/health
 ```
 
-Check it:
+### Frontend environment
 
-```powershell
-Invoke-WebRequest http://localhost:8000/health
+Copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_BASE_URL` to your machine's LAN IP:
+
+```env
+EXPO_PUBLIC_API_BASE_URL=http://<your-computer-wifi-ip>:8000
+```
+
+OIDC sign-in is optional. The sample book is always available without it. To enable personal imports and camera scan, also set the three `EXPO_PUBLIC_OIDC_*` variables in `.env`. The native callback URL is `aibookreader://`.
+
+### Running tests
+
+```bash
+# Backend unit and integration tests (requires postgres-test container)
+docker compose --profile test up -d postgres-test
+pytest -c backend/pytest.ini backend/tests -v
+
+# Frontend tests and type checking
+npm test
+npm run typecheck
+
+# Web export smoke check
+npx expo export --platform web
 ```
 
 ## Run On iPhone From Windows
