@@ -101,7 +101,8 @@ test('uploads all batches and commits when starting fresh', async () => {
   expect(api.createOrResume).toHaveBeenCalledTimes(1);
   expect(api.uploadBatch.mock.calls.length).toBeGreaterThanOrEqual(1);
   expect(api.commit).toHaveBeenCalledTimes(1);
-  expect(result.status).toBe('queued');
+  // indexBook polls until terminal status; mock getStatus returns 'ready' immediately
+  expect(result.status).toBe('ready');
   expect(result.cloudBookId).toBe('book-1');
   expect(result.versionId).toBe('ver-1');
 });

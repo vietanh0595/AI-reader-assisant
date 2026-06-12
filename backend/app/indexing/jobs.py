@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import or_, select, func
+from sqlalchemy import and_, or_, select, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import IndexJob, JobStatus
@@ -25,12 +25,22 @@ class JobRepository:
                 job = session.scalar(
                     select(IndexJob)
                     .where(
-                        IndexJob.status.in_([JobStatus.QUEUED, JobStatus.RETRY]),
-                        IndexJob.next_attempt_at <= now,
                         or_(
-                            IndexJob.lease_expires_at.is_(None),
-                            IndexJob.lease_expires_at < now,
-                        ),
+                            # Normal QUEUED/RETRY path
+                            and_(
+                                IndexJob.status.in_([JobStatus.QUEUED, JobStatus.RETRY]),
+                                IndexJob.next_attempt_at <= now,
+                                or_(
+                                    IndexJob.lease_expires_at.is_(None),
+                                    IndexJob.lease_expires_at < now,
+                                ),
+                            ),
+                            # Reclaim RUNNING jobs whose lease expired (crashed worker)
+                            and_(
+                                IndexJob.status == JobStatus.RUNNING,
+                                IndexJob.lease_expires_at < now,
+                            ),
+                        )
                     )
                     .order_by(IndexJob.created_at)
                     .with_for_update(skip_locked=True)

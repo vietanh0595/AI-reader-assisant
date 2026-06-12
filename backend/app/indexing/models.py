@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -115,11 +116,11 @@ class BookBlock(UuidTimestampMixin, Base):
         UniqueConstraint(
             "index_version_id", "reading_order", name="ix_book_blocks_version_order"
         ),
+        Index("ix_book_blocks_version_id", "index_version_id"),
     )
 
     index_version_id: Mapped[UUID] = mapped_column(
         ForeignKey("index_versions.id", ondelete="CASCADE"),
-        index=True,
         nullable=False,
     )
     paragraph_id: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -140,11 +141,11 @@ class UploadBatch(UuidTimestampMixin, Base):
         UniqueConstraint(
             "index_version_id", "sequence_number", name="ix_upload_batches_version_sequence"
         ),
+        Index("ix_upload_batches_version_id", "index_version_id"),
     )
 
     index_version_id: Mapped[UUID] = mapped_column(
         ForeignKey("index_versions.id", ondelete="CASCADE"),
-        index=True,
         nullable=False,
     )
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -162,11 +163,11 @@ class RagChunk(UuidTimestampMixin, Base):
         UniqueConstraint(
             "index_version_id", "chunk_order", name="ix_rag_chunks_version_order"
         ),
+        Index("ix_rag_chunks_version_id", "index_version_id"),
     )
 
     index_version_id: Mapped[UUID] = mapped_column(
         ForeignKey("index_versions.id", ondelete="CASCADE"),
-        index=True,
         nullable=False,
     )
     chunk_order: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -191,10 +192,13 @@ class RagChunk(UuidTimestampMixin, Base):
 
 class IndexJob(UuidTimestampMixin, Base):
     __tablename__ = "index_jobs"
+    __table_args__ = (
+        Index("ix_index_jobs_version_id", "index_version_id"),
+        Index("ix_index_jobs_claim", "status", "next_attempt_at", "lease_expires_at"),
+    )
 
     index_version_id: Mapped[UUID] = mapped_column(
         ForeignKey("index_versions.id", ondelete="CASCADE"),
-        index=True,
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False)

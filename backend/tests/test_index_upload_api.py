@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 
 import pytest
@@ -52,6 +53,10 @@ def gzip_json(obj: dict) -> bytes:
     return gzip.compress(json.dumps(obj).encode())
 
 
+def sha256_of(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def create_and_commit_index(
     client: TestClient,
     *,
@@ -64,10 +69,11 @@ def create_and_commit_index(
     ).json()
     book_id = created["bookId"]
     version_id = created["versionId"]
+    body = gzip_json(batch_request())
     client.put(
         f"/library/books/{book_id}/index/versions/{version_id}/batches/0",
-        content=gzip_json(batch_request()),
-        headers={"Idempotency-Key": "batch-0", "X-Payload-SHA256": "hash-0", "Content-Encoding": "gzip"},
+        content=body,
+        headers={"Idempotency-Key": "batch-0", "X-Payload-SHA256": sha256_of(body), "Content-Encoding": "gzip"},
     )
     client.post(f"/library/books/{book_id}/index/versions/{version_id}/commit")
 
@@ -130,11 +136,11 @@ def test_completed_content_hash_is_reused_only_for_same_user(
 def test_upload_batch_succeeds(auth_client: TestClient) -> None:
     created = auth_client.post("/library/books/index", json=book_index_request()).json()
     book_id, version_id = created["bookId"], created["versionId"]
-
+    body = gzip_json(batch_request())
     resp = auth_client.put(
         f"/library/books/{book_id}/index/versions/{version_id}/batches/0",
-        content=gzip_json(batch_request()),
-        headers={"Idempotency-Key": "key-0", "X-Payload-SHA256": "hash-0", "Content-Encoding": "gzip"},
+        content=body,
+        headers={"Idempotency-Key": "key-0", "X-Payload-SHA256": sha256_of(body), "Content-Encoding": "gzip"},
     )
     assert resp.status_code == 200
     assert resp.json()["replayed"] is False
@@ -144,8 +150,8 @@ def test_identical_batch_replay_is_idempotent(auth_client: TestClient) -> None:
     created = auth_client.post("/library/books/index", json=book_index_request()).json()
     book_id, version_id = created["bookId"], created["versionId"]
     path = f"/library/books/{book_id}/index/versions/{version_id}/batches/0"
-    headers = {"Idempotency-Key": "batch-key", "X-Payload-SHA256": "same-hash", "Content-Encoding": "gzip"}
     body = gzip_json(batch_request())
+    headers = {"Idempotency-Key": "batch-key", "X-Payload-SHA256": sha256_of(body), "Content-Encoding": "gzip"}
 
     first = auth_client.put(path, content=body, headers=headers)
     second = auth_client.put(path, content=body, headers=headers)
@@ -160,15 +166,17 @@ def test_conflicting_batch_replay_returns_409(auth_client: TestClient) -> None:
     book_id, version_id = created["bookId"], created["versionId"]
     path = f"/library/books/{book_id}/index/versions/{version_id}/batches/0"
 
+    body_a = gzip_json(batch_request([make_block(0, "first")]))
+    body_b = gzip_json(batch_request([make_block(0, "second")]))
     auth_client.put(
         path,
-        content=gzip_json(batch_request([make_block(0, "first")])),
-        headers={"Idempotency-Key": "key-A", "X-Payload-SHA256": "hash-A", "Content-Encoding": "gzip"},
+        content=body_a,
+        headers={"Idempotency-Key": "key-A", "X-Payload-SHA256": sha256_of(body_a), "Content-Encoding": "gzip"},
     )
     resp = auth_client.put(
         path,
-        content=gzip_json(batch_request([make_block(0, "second")])),
-        headers={"Idempotency-Key": "key-A", "X-Payload-SHA256": "hash-B", "Content-Encoding": "gzip"},
+        content=body_b,
+        headers={"Idempotency-Key": "key-A", "X-Payload-SHA256": sha256_of(body_b), "Content-Encoding": "gzip"},
     )
     assert resp.status_code == 409
 
@@ -203,10 +211,11 @@ def test_malformed_gzip_body_returns_400(auth_client: TestClient) -> None:
 def test_commit_transitions_to_queued(auth_client: TestClient) -> None:
     created = auth_client.post("/library/books/index", json=book_index_request()).json()
     book_id, version_id = created["bookId"], created["versionId"]
+    body = gzip_json(batch_request())
     auth_client.put(
         f"/library/books/{book_id}/index/versions/{version_id}/batches/0",
-        content=gzip_json(batch_request()),
-        headers={"Idempotency-Key": "key-0", "X-Payload-SHA256": "hash-0", "Content-Encoding": "gzip"},
+        content=body,
+        headers={"Idempotency-Key": "key-0", "X-Payload-SHA256": sha256_of(body), "Content-Encoding": "gzip"},
     )
     resp = auth_client.post(f"/library/books/{book_id}/index/versions/{version_id}/commit")
     assert resp.status_code == 200

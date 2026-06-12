@@ -29,6 +29,11 @@ export function BookSources({ sources, onNavigate }: BookSourcesProps) {
                 {source.chapterTitle}
               </Text>
             ) : null}
+            {source.pageIndex !== undefined ? (
+              <Text style={styles.pageLabel} numberOfLines={1}>
+                {source.pageLabel ?? `Page ${source.pageIndex + 1}`}
+              </Text>
+            ) : null}
             <Text style={styles.excerpt} numberOfLines={2}>
               {source.excerpt}
             </Text>
@@ -64,6 +69,11 @@ const styles = StyleSheet.create({
     color: '#244f38',
     fontSize: 11,
     fontWeight: '700',
+    marginBottom: 2,
+  },
+  pageLabel: {
+    color: '#6b7280',
+    fontSize: 10,
     marginBottom: 4,
   },
   excerpt: {

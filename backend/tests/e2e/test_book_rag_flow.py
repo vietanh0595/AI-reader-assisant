@@ -7,6 +7,7 @@ without touching real OpenAI APIs (embedding + LLM are mocked).
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import uuid
 from unittest.mock import MagicMock, patch
@@ -185,7 +186,7 @@ def test_full_indexing_pipeline(auth_client, book_fixture, migrated_database, ap
             "Content-Type": "application/json",
             "Content-Encoding": "gzip",
             "Idempotency-Key": "e2e-batch-0",
-            "X-Payload-SHA256": "0" * 64,
+            "X-Payload-SHA256": hashlib.sha256(compressed).hexdigest(),
         },
     )
     assert upload_resp.status_code == 200

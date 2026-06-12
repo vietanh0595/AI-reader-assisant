@@ -23,6 +23,7 @@ from .repository import (
     DEFAULT_EMBEDDING_DIMENSIONS,
     DEFAULT_EMBEDDING_MODEL,
     create_version,
+    find_committed_version_for_hash,
     find_completed_version_for_hash,
     find_uploading_version,
     get_acknowledged_batch_count,
@@ -88,6 +89,19 @@ class IndexingService:
                 version_id=str(existing.id),
                 reused=False,
                 acknowledged_batches=acked,
+            )
+
+        # Resume a version that is already committed (queued/indexing) — treat as reused.
+        in_progress = find_committed_version_for_hash(
+            self._session,
+            book_id=book.id,
+            content_hash=request.content_hash,
+        )
+        if in_progress:
+            return CreateIndexResponse(
+                book_id=str(book.id),
+                version_id=str(in_progress.id),
+                reused=True,
             )
 
         version = create_version(
@@ -180,6 +194,19 @@ class IndexingService:
         version = get_owned_version(self._session, user_id, book_id, version_id)
         if not version:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+
+        # Idempotent: already committed versions just return their current status.
+        if version.status in (
+            IndexVersionStatus.QUEUED,
+            IndexVersionStatus.INDEXING,
+            IndexVersionStatus.READY,
+        ):
+            return IndexStatus(
+                status=version.status,
+                progress=version.progress,
+                version_id=str(version.id),
+            )
+
         if version.status != IndexVersionStatus.UPLOADING:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

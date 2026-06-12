@@ -2525,20 +2525,32 @@ function ReaderApp() {
             : item,
         ),
       );
-      // Fire-and-forget: remove cloud index; UI has already removed the local item.
-      void (async () => {
-        const token = await getAccessToken();
-        if (token) {
-          try {
-            await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          } catch {
-            // Best-effort: orphaned cloud data is acceptable; local item is already gone.
-          }
+
+      const token = await getAccessToken();
+      if (token) {
+        let ok = false;
+        try {
+          const resp = await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          ok = resp.ok || resp.status === 404;
+        } catch {
+          ok = false;
         }
-      })();
+
+        if (!ok) {
+          // Revert to previous state so the user can retry.
+          setLibraryItems((items) =>
+            items.map((item) =>
+              item.id === bookId
+                ? { ...item, wholeBookAi: itemToDelete.wholeBookAi }
+                : item,
+            ),
+          );
+          return;
+        }
+      }
     }
 
     const remainingItems = libraryItems.filter((item) => item.id !== bookId);
@@ -3478,6 +3490,10 @@ function ReaderApp() {
                   onChangeIncludeWholeBook={setIncludeWholeBook}
                   onChangeQuestion={setQuestion}
                   onClose={() => setIsAskOpen(false)}
+                  onSetupWholeBookAi={() => {
+                    setIsAskOpen(false);
+                    setIsWholeBookAiOpen(true);
+                  }}
                   onSubmit={submitQuestion}
                 />
               ) : null}
@@ -4907,6 +4923,7 @@ function AskSheet({
   onChangeIncludeWholeBook,
   onChangeQuestion,
   onClose,
+  onSetupWholeBookAi,
   onSubmit,
 }: {
   contextScope: AskContextScope;
@@ -4918,12 +4935,11 @@ function AskSheet({
   onChangeIncludeWholeBook: (value: boolean) => void;
   onChangeQuestion: (value: string) => void;
   onClose: () => void;
+  onSetupWholeBookAi: () => void;
   onSubmit: () => void;
 }) {
   const canSubmit = question.trim().length > 0;
-  const scopeOptions: AskContextScope[] = isBookIndexReady
-    ? ['selection', 'visiblePage', 'chapter', 'book']
-    : ['selection', 'visiblePage', 'chapter'];
+  const scopeOptions: AskContextScope[] = ['selection', 'visiblePage', 'chapter', 'book'];
 
   return (
     <View style={styles.sheetLayer}>
@@ -4940,16 +4956,28 @@ function AskSheet({
           <View style={styles.askScopeRow}>
             {scopeOptions.map((option) => {
               const isActive = contextScope === option;
+              const isBookNotReady = option === 'book' && !isBookIndexReady;
 
               return (
                 <Pressable
                   key={option}
                   accessibilityRole="button"
-                  onPress={() => onChangeContextScope(option)}
+                  accessibilityLabel={
+                    isBookNotReady
+                      ? 'Set up Whole-Book AI'
+                      : getAskContextScopeLabel(option)
+                  }
+                  onPress={() => {
+                    if (isBookNotReady) {
+                      onSetupWholeBookAi();
+                    } else {
+                      onChangeContextScope(option);
+                    }
+                  }}
                   style={[styles.askScopeButton, isActive && styles.askScopeButtonActive]}
                 >
                   <Text style={[styles.askScopeText, isActive && styles.askScopeTextActive]}>
-                    {getAskContextScopeLabel(option)}
+                    {isBookNotReady ? '✦ Book AI' : getAskContextScopeLabel(option)}
                   </Text>
                 </Pressable>
               );

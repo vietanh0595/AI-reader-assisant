@@ -46,15 +46,16 @@ export async function indexBook({
   });
 
   if (reused) {
-    const status = await api.getStatus(bookId);
-    return {
+    const initial = await api.getStatus(bookId);
+    const base: WholeBookAiState = {
       acknowledgedBatch: -1,
       cloudBookId: bookId,
       versionId,
       contentHash,
-      status: (status.status as WholeBookAiState['status']) ?? 'queued',
-      progress: status.progress ?? 0,
+      status: (initial.status as WholeBookAiState['status']) ?? 'queued',
+      progress: initial.progress ?? 0,
     };
+    return pollUntilDone(api, bookId, base, onProgress);
   }
 
   const serverAcknowledged = acknowledgedBatches ?? 0;
@@ -83,16 +84,38 @@ export async function indexBook({
     onProgress((seq + 1) / batches.length * 0.9);
   }
 
-  const commitStatus = await api.commit(bookId, versionId);
+  await api.commit(bookId, versionId);
 
-  onProgress(1);
-
-  return {
+  const committed: WholeBookAiState = {
     acknowledgedBatch: lastAcknowledged,
     cloudBookId: bookId,
     versionId,
     contentHash,
-    status: (commitStatus.status as WholeBookAiState['status']) ?? 'queued',
-    progress: commitStatus.progress ?? 0,
+    status: 'queued',
+    progress: 0,
   };
+  return pollUntilDone(api, bookId, committed, onProgress);
+}
+
+const _POLL_INTERVAL_MS = 3_000;
+const _TERMINAL_STATUSES = new Set<WholeBookAiState['status']>(['ready', 'failed']);
+
+async function pollUntilDone(
+  api: IndexApi,
+  bookId: string,
+  state: WholeBookAiState,
+  onProgress: (progress: number) => void,
+): Promise<WholeBookAiState> {
+  let current = state;
+  while (!_TERMINAL_STATUSES.has(current.status)) {
+    await new Promise<void>((resolve) => setTimeout(resolve, _POLL_INTERVAL_MS));
+    const polled = await api.getStatus(bookId);
+    current = {
+      ...current,
+      status: (polled.status as WholeBookAiState['status']) ?? current.status,
+      progress: polled.progress ?? current.progress,
+    };
+    onProgress(current.progress);
+  }
+  return current;
 }

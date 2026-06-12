@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -53,6 +54,13 @@ async def upload_batch(
     service: IndexingService = Depends(get_service),
 ) -> BatchUploadResponse:
     raw = await request.body()
+
+    computed_hash = hashlib.sha256(raw).hexdigest()
+    if computed_hash != payload_sha256:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payload SHA256 mismatch.",
+        )
 
     if request.headers.get("content-encoding", "").lower() == "gzip":
         try:

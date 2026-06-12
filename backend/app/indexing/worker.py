@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -41,11 +42,16 @@ class IndexWorker:
     def process(self, job: Any, worker_id: str | None = None) -> None:
         job_id = job.id
         version_id = job.index_version_id
-        # Use the lease_owner that was recorded during claim so that complete()
-        # passes the ownership check.  Fall back to a job-scoped ID when called
-        # outside of run_forever (e.g. directly from tests).
         effective_worker_id = worker_id or getattr(job, "lease_owner", None) or f"{_WORKER_ID_PREFIX}-{job_id}"
 
+        stop_event = threading.Event()
+
+        def _heartbeat_loop() -> None:
+            while not stop_event.wait(_HEARTBEAT_INTERVAL):
+                self._jobs.heartbeat(job_id, effective_worker_id)
+
+        hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+        hb_thread.start()
         try:
             self._mark_indexing(version_id)
             blocks = self._load_blocks(version_id)
@@ -55,8 +61,10 @@ class IndexWorker:
             self._jobs.complete(job_id, effective_worker_id)
         except Exception as exc:
             self._mark_failed(version_id)
-            self._jobs.fail_permanent(job_id, effective_worker_id, "indexing_error", str(exc))
+            self._jobs.fail_retryable(job_id, effective_worker_id, "indexing_error", str(exc))
             raise
+        finally:
+            stop_event.set()
 
     def _mark_indexing(self, version_id: UUID) -> None:
         with self._factory() as session:

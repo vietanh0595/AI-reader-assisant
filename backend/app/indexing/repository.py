@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Book, IndexVersion, IndexVersionStatus, UploadBatch
+from .models import Book, BookBlock, IndexVersion, IndexVersionStatus, UploadBatch
 
 
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -48,6 +48,21 @@ def get_or_create_book(
         session.add(book)
         session.flush()
     return book
+
+
+def find_committed_version_for_hash(
+    session: Session,
+    book_id: UUID,
+    content_hash: str,
+) -> Optional[IndexVersion]:
+    """Return a version that is already past uploading (queued/indexing) for the same hash."""
+    return session.scalar(
+        select(IndexVersion).where(
+            IndexVersion.book_id == book_id,
+            IndexVersion.content_hash == content_hash,
+            IndexVersion.status.in_([IndexVersionStatus.QUEUED, IndexVersionStatus.INDEXING]),
+        )
+    )
 
 
 def find_uploading_version(session: Session, book_id: UUID) -> Optional[IndexVersion]:
@@ -142,7 +157,6 @@ def get_acknowledged_batch_count(session: Session, version_id: UUID) -> int:
 
 def get_actual_block_count(session: Session, version_id: UUID) -> int:
     from sqlalchemy import func
-    from .models import BookBlock
     return session.scalar(
         select(func.count(BookBlock.id)).where(
             BookBlock.index_version_id == version_id,
