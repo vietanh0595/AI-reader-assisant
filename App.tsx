@@ -35,6 +35,7 @@ import {
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { SignInSheet } from './src/components/SignInSheet';
+import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import type { WholeBookAiState } from './src/rag/types';
 import {
   ActivityIndicator,
@@ -2337,6 +2338,7 @@ function ReaderApp() {
   const [importError, setImportError] = useState<string | null>(null);
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [isSavedNotesOpen, setIsSavedNotesOpen] = useState(false);
+  const [isWholeBookAiOpen, setIsWholeBookAiOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<ScrollTarget | null>(null);
   const [isStorageReady, setIsStorageReady] = useState(false);
@@ -2455,11 +2457,22 @@ function ReaderApp() {
     }
   }
 
-  function deleteLibraryItem(bookId: string) {
+  async function deleteLibraryItem(bookId: string) {
     const itemToDelete = libraryItems.find((item) => item.id === bookId);
 
     if (!itemToDelete || itemToDelete.book.source === 'sample' || libraryItems.length <= 1) {
       return;
+    }
+
+    const cloudBookId = itemToDelete.wholeBookAi?.cloudBookId;
+    if (cloudBookId) {
+      setLibraryItems((items) =>
+        items.map((item) =>
+          item.id === bookId
+            ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'deleting' } }
+            : item,
+        ),
+      );
     }
 
     const remainingItems = libraryItems.filter((item) => item.id !== bookId);
@@ -3267,6 +3280,19 @@ function ReaderApp() {
           )}
         </View>
       </SafeAreaView>
+
+      {isWholeBookAiOpen ? (
+        <WholeBookAiSheet
+          state={activeLibraryItem.wholeBookAi}
+          onClose={() => setIsWholeBookAiOpen(false)}
+          onEnable={() => {
+            setIsWholeBookAiOpen(false);
+          }}
+          onRetry={() => {
+            setIsWholeBookAiOpen(false);
+          }}
+        />
+      ) : null}
 
       {isSignInOpen ? (
         <SignInSheet
