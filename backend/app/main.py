@@ -11,6 +11,7 @@ from .config import Settings, get_settings
 from .db.session import create_session_factory
 from .openai_assistant import AssistantConfigurationError, AssistantServiceError, OpenAIAssistant
 from .routers.auth import router as auth_router
+from .routers.indexing import router as indexing_router
 from .schemas import AssistRequest, AssistResponse, OcrRequest, OcrResponse
 
 
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=list(app_settings.cors_allow_origins),
     )
     app.include_router(auth_router)
+    app.include_router(indexing_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

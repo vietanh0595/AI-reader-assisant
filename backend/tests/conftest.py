@@ -95,3 +95,72 @@ def test_app(app_settings: Settings) -> FastAPI:
 def test_client(test_app: FastAPI) -> Generator[TestClient, None, None]:
     with TestClient(test_app, raise_server_exceptions=False) as client:
         yield client
+
+
+@pytest.fixture
+def committed_user(migrated_database) -> Generator:
+    """Creates a real committed User row for API-level integration tests."""
+    from sqlalchemy.orm import Session as OrmSession
+    from backend.app.db.models import User
+
+    user_id = None
+    with OrmSession(migrated_database) as session:
+        with session.begin():
+            user = User()
+            session.add(user)
+            session.flush()
+            user_id = user.id
+
+    yield user_id
+
+    with OrmSession(migrated_database) as session:
+        with session.begin():
+            user = session.get(User, user_id)
+            if user:
+                session.delete(user)
+
+
+@pytest.fixture
+def committed_other_user(migrated_database) -> Generator:
+    """Creates a second real committed User row for ownership tests."""
+    from sqlalchemy.orm import Session as OrmSession
+    from backend.app.db.models import User
+
+    user_id = None
+    with OrmSession(migrated_database) as session:
+        with session.begin():
+            user = User()
+            session.add(user)
+            session.flush()
+            user_id = user.id
+
+    yield user_id
+
+    with OrmSession(migrated_database) as session:
+        with session.begin():
+            user = session.get(User, user_id)
+            if user:
+                session.delete(user)
+
+
+def _make_auth_client(app_settings: Settings, user_id) -> Generator[TestClient, None, None]:
+    from backend.app.auth.dependencies import get_current_user
+    from backend.app.db.models import User
+    from backend.app.main import create_app
+
+    dedicated_app = create_app(app_settings)
+    fake_user = User()
+    fake_user.id = user_id
+    dedicated_app.dependency_overrides[get_current_user] = lambda: fake_user
+    with TestClient(dedicated_app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture
+def auth_client(app_settings: Settings, committed_user) -> Generator[TestClient, None, None]:
+    yield from _make_auth_client(app_settings, committed_user)
+
+
+@pytest.fixture
+def other_auth_client(app_settings: Settings, committed_other_user) -> Generator[TestClient, None, None]:
+    yield from _make_auth_client(app_settings, committed_other_user)

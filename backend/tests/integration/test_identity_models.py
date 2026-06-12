@@ -40,7 +40,7 @@ def test_database_is_prepared_by_alembic(db_session):
     assert "alembic_version" in inspector.get_table_names()
     assert (
         db_session.scalar(text("SELECT version_num FROM alembic_version"))
-        == "20260611_0001"
+        == "20260611_0002"
     )
 
 
