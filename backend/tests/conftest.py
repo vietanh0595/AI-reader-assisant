@@ -81,6 +81,8 @@ def app_settings() -> Settings:
         oidc_issuer_url=None,
         oidc_audience=None,
         oidc_jwks_url=None,
+        embedding_model="text-embedding-3-small",
+        embedding_dimensions=1536,
     )
 
 
