@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 DEFAULT_REASONING_EFFORT = "minimal"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://reader:reader@localhost:5432/reader"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS = 1536
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_DIR.parent
 
@@ -33,6 +35,8 @@ class Settings:
     oidc_issuer_url: Optional[str]
     oidc_audience: Optional[str]
     oidc_jwks_url: Optional[str]
+    embedding_model: str
+    embedding_dimensions: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,6 +51,8 @@ class Settings:
             oidc_issuer_url=_read_optional_env("OIDC_ISSUER_URL"),
             oidc_audience=_read_optional_env("OIDC_AUDIENCE"),
             oidc_jwks_url=_read_optional_env("OIDC_JWKS_URL"),
+            embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL,
+            embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))),
         )
 
     def require_openai_api_key(self) -> str:
