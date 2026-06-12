@@ -38,6 +38,8 @@ import { BookSources } from './src/components/BookSources';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import type { BookSource } from './src/rag/bookAskTypes';
+import { createIndexApi } from './src/rag/indexApi';
+import { indexBook } from './src/rag/indexBook';
 import type { WholeBookAiState } from './src/rag/types';
 import {
   ActivityIndicator,
@@ -2394,6 +2396,7 @@ function ReaderApp() {
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
+  const [includeWholeBook, setIncludeWholeBook] = useState(false);
   const [askContextScope, setAskContextScope] = useState<AskContextScope>('selection');
   const [lastAskRequest, setLastAskRequest] = useState<LastAskRequest | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2463,6 +2466,7 @@ function ReaderApp() {
     setEditingNoteText('');
     setQuestion('');
     setBookAskSources([]);
+    setIncludeWholeBook(false);
     setAskContextScope('selection');
     setLastAskRequest(null);
   }
@@ -2521,6 +2525,20 @@ function ReaderApp() {
             : item,
         ),
       );
+      // Fire-and-forget: remove cloud index; UI has already removed the local item.
+      void (async () => {
+        const token = await getAccessToken();
+        if (token) {
+          try {
+            await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          } catch {
+            // Best-effort: orphaned cloud data is acceptable; local item is already gone.
+          }
+        }
+      })();
     }
 
     const remainingItems = libraryItems.filter((item) => item.id !== bookId);
@@ -2712,6 +2730,27 @@ function ReaderApp() {
       }
     };
   }, []);
+
+  // When isAuthenticated transitions to true, dispatch any pending action.
+  // This avoids the stale-closure race where importBook()/scanDocumentPage()
+  // see isAuthenticated=false immediately after signIn() resolves.
+  useEffect(() => {
+    if (!isAuthenticated || !pendingAuthenticatedAction) {
+      return;
+    }
+
+    const action = pendingAuthenticatedAction;
+    setPendingAuthenticatedAction(null);
+    setIsSignInOpen(false);
+
+    if (action === 'import') {
+      void importBook();
+    } else if (action === 'scan') {
+      void scanDocumentPage();
+    }
+  // importBook and scanDocumentPage are stable (defined inside component, not recreated)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -3182,7 +3221,7 @@ function ReaderApp() {
         questionText,
         paragraphId,
         readingOrder,
-        true,
+        includeWholeBook,
         token,
       );
 
@@ -3198,6 +3237,97 @@ function ReaderApp() {
       if (assistRequestId.current === requestId) {
         setIsAssistLoading(false);
       }
+    }
+  }
+
+  async function runIndexBook() {
+    const token = await getAccessToken();
+    if (!token) {
+      setIsSignInOpen(true);
+      return;
+    }
+
+    const client = {
+      fetch(path: string, init?: RequestInit) {
+        return fetch(`${apiBaseUrl}${path}`, {
+          ...init,
+          headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+        });
+      },
+    };
+    const api = createIndexApi(client);
+
+    const bookParagraphs = currentBook.paragraphs.map((p) => ({
+      id: p.id,
+      blockKind: (p.blockKind ?? 'body') as import('./src/rag/types').UploadBlock['blockKind'],
+      text: p.segments.map((s) => s.text).join(''),
+      sourceRef: p.sourceRef ?? { source: currentBook.source === 'sample' ? 'epub' : (currentBook.source as import('./src/rag/types').DocumentSource) },
+      chapterId: undefined as string | undefined,
+      chapterTitle: undefined as string | undefined,
+    }));
+
+    // Annotate each paragraph with its chapter
+    let chapterIdx = 0;
+    for (let i = 0; i < bookParagraphs.length; i++) {
+      while (
+        chapterIdx + 1 < currentBook.chapters.length &&
+        currentBook.paragraphs.findIndex((p) => p.id === currentBook.chapters[chapterIdx + 1].paragraphId) <= i
+      ) {
+        chapterIdx++;
+      }
+      const chapter = currentBook.chapters[chapterIdx];
+      if (chapter) {
+        bookParagraphs[i].chapterId = chapter.id;
+        bookParagraphs[i].chapterTitle = chapter.title;
+      }
+    }
+
+    const activeId = activeLibraryItem.id;
+    setLibraryItems((items) =>
+      items.map((item) =>
+        item.id === activeId
+          ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'uploading' } }
+          : item,
+      ),
+    );
+    setIsWholeBookAiOpen(false);
+
+    try {
+      const nextState = await indexBook({
+        api,
+        book: {
+          paragraphs: bookParagraphs,
+          title: currentBook.title,
+          author: currentBook.author,
+          source: currentBook.source === 'sample' ? 'epub' : (currentBook.source as 'epub' | 'pdf' | 'scan'),
+          clientBookId: activeLibraryItem.id,
+          fileName: currentBook.fileName,
+        },
+        localState: activeLibraryItem.wholeBookAi.cloudBookId ? activeLibraryItem.wholeBookAi : null,
+        onProgress: (progress) => {
+          setLibraryItems((items) =>
+            items.map((item) =>
+              item.id === activeId
+                ? { ...item, wholeBookAi: { ...item.wholeBookAi, progress } }
+                : item,
+            ),
+          );
+        },
+      });
+
+      setLibraryItems((items) =>
+        items.map((item) =>
+          item.id === activeId ? { ...item, wholeBookAi: nextState } : item,
+        ),
+      );
+    } catch {
+      setLibraryItems((items) =>
+        items.map((item) =>
+          item.id === activeId
+            ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'failed' } }
+            : item,
+        ),
+      );
     }
   }
 
@@ -3340,10 +3470,12 @@ function ReaderApp() {
               {isAskOpen && (selection || contextSelection) ? (
                 <AskSheet
                   contextScope={askContextScope}
+                  includeWholeBook={includeWholeBook}
                   isBookIndexReady={activeLibraryItem.wholeBookAi.status === 'ready'}
                   question={question}
                   selectedText={(selection ?? contextSelection)?.text ?? ''}
                   onChangeContextScope={setAskContextScope}
+                  onChangeIncludeWholeBook={setIncludeWholeBook}
                   onChangeQuestion={setQuestion}
                   onClose={() => setIsAskOpen(false)}
                   onSubmit={submitQuestion}
@@ -3405,12 +3537,8 @@ function ReaderApp() {
         <WholeBookAiSheet
           state={activeLibraryItem.wholeBookAi}
           onClose={() => setIsWholeBookAiOpen(false)}
-          onEnable={() => {
-            setIsWholeBookAiOpen(false);
-          }}
-          onRetry={() => {
-            setIsWholeBookAiOpen(false);
-          }}
+          onEnable={() => { void runIndexBook(); }}
+          onRetry={() => { void runIndexBook(); }}
         />
       ) : null}
 
@@ -3426,15 +3554,10 @@ function ReaderApp() {
             setIsSigningIn(true);
             await signIn();
             setIsSigningIn(false);
-            setIsSignInOpen(false);
-            if (pendingAuthenticatedAction === 'import') {
-              setPendingAuthenticatedAction(null);
-              void importBook();
-            } else if (pendingAuthenticatedAction === 'scan') {
-              setPendingAuthenticatedAction(null);
-              void scanDocumentPage();
-            } else {
-              setPendingAuthenticatedAction(null);
+            // If there is a pendingAuthenticatedAction, the useEffect watching
+            // isAuthenticated will dispatch it once the auth state updates.
+            if (!pendingAuthenticatedAction) {
+              setIsSignInOpen(false);
             }
           }}
         />
@@ -4776,19 +4899,23 @@ function InsightCard({
 
 function AskSheet({
   contextScope,
+  includeWholeBook,
   isBookIndexReady,
   question,
   selectedText,
   onChangeContextScope,
+  onChangeIncludeWholeBook,
   onChangeQuestion,
   onClose,
   onSubmit,
 }: {
   contextScope: AskContextScope;
+  includeWholeBook: boolean;
   isBookIndexReady: boolean;
   question: string;
   selectedText: string;
   onChangeContextScope: (scope: AskContextScope) => void;
+  onChangeIncludeWholeBook: (value: boolean) => void;
   onChangeQuestion: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -4828,6 +4955,21 @@ function AskSheet({
               );
             })}
           </View>
+          {contextScope === 'book' ? (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: includeWholeBook }}
+              onPress={() => onChangeIncludeWholeBook(!includeWholeBook)}
+              style={styles.wholeBookToggleRow}
+            >
+              <Text style={styles.wholeBookToggleLabel}>
+                {includeWholeBook ? 'Whole book' : 'Book so far'}
+              </Text>
+              <View style={[styles.wholeBookToggle, includeWholeBook && styles.wholeBookToggleOn]}>
+                <View style={[styles.wholeBookToggleThumb, includeWholeBook && styles.wholeBookToggleThumbOn]} />
+              </View>
+            </Pressable>
+          ) : null}
           <View style={styles.questionRow}>
             <TextInput
               multiline
@@ -5870,6 +6012,38 @@ const styles = StyleSheet.create({
   },
   askScopeTextActive: {
     color: colors.white,
+  },
+  wholeBookToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  wholeBookToggleLabel: {
+    color: colors.mutedInk,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  wholeBookToggle: {
+    backgroundColor: '#ccc',
+    borderRadius: 12,
+    height: 24,
+    justifyContent: 'center',
+    padding: 2,
+    width: 44,
+  },
+  wholeBookToggleOn: {
+    backgroundColor: colors.sageDark,
+  },
+  wholeBookToggleThumb: {
+    backgroundColor: colors.white,
+    borderRadius: 10,
+    height: 20,
+    width: 20,
+  },
+  wholeBookToggleThumbOn: {
+    alignSelf: 'flex-end',
   },
   questionRow: {
     alignItems: 'center',

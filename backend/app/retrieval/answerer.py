@@ -96,6 +96,7 @@ def _build_sources(
         item = items_by_id[cid]
         para_id = item.paragraph_ids[0] if item.paragraph_ids else ""
         source_ref = item.source_refs[0] if item.source_refs else {}
+        page_label = source_ref.get("pageLabel") if isinstance(source_ref, dict) else None
         sources.append(
             BookSource(
                 id=cid,
@@ -103,7 +104,7 @@ def _build_sources(
                 chapter_title=item.chapter_title,
                 excerpt=item.raw_text[:200],
                 page_index=item.page_start,
-                page_label=None,
+                page_label=page_label,
                 source_ref=source_ref,
             )
         )

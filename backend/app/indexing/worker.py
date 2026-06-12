@@ -38,21 +38,24 @@ class IndexWorker:
         self._chunker = chunker or StructureAwareChunker()
         self._jobs = JobRepository(session_factory)
 
-    def process(self, job: Any) -> None:
+    def process(self, job: Any, worker_id: str | None = None) -> None:
         job_id = job.id
         version_id = job.index_version_id
-        worker_id = f"{_WORKER_ID_PREFIX}-{job_id}"
+        # Use the lease_owner that was recorded during claim so that complete()
+        # passes the ownership check.  Fall back to a job-scoped ID when called
+        # outside of run_forever (e.g. directly from tests).
+        effective_worker_id = worker_id or getattr(job, "lease_owner", None) or f"{_WORKER_ID_PREFIX}-{job_id}"
 
         try:
             self._mark_indexing(version_id)
             blocks = self._load_blocks(version_id)
             chunks = self._chunker.chunk(blocks)
-            self._embed_and_store_chunks(version_id, chunks, job_id, worker_id)
+            self._embed_and_store_chunks(version_id, chunks)
             self._activate_version(version_id)
-            self._jobs.complete(job_id, worker_id)
+            self._jobs.complete(job_id, effective_worker_id)
         except Exception as exc:
             self._mark_failed(version_id)
-            self._jobs.fail_permanent(job_id, worker_id, "indexing_error", str(exc))
+            self._jobs.fail_permanent(job_id, effective_worker_id, "indexing_error", str(exc))
             raise
 
     def _mark_indexing(self, version_id: UUID) -> None:
@@ -76,8 +79,6 @@ class IndexWorker:
         self,
         version_id: UUID,
         chunks: list[Any],
-        job_id: UUID,
-        worker_id: str,
     ) -> None:
         texts = [c.embedding_input_text for c in chunks]
         embeddings = self._embedder.embed_documents(texts)
@@ -86,6 +87,11 @@ class IndexWorker:
             with session.begin():
                 for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_hash = hashlib.sha256(chunk.embedding_input_text.encode()).hexdigest()
+                    page_indices = [
+                        ref["pageIndex"]
+                        for ref in chunk.source_refs
+                        if isinstance(ref.get("pageIndex"), int)
+                    ]
                     rag_chunk = RagChunk(
                         index_version_id=version_id,
                         chunk_order=i,
@@ -100,6 +106,8 @@ class IndexWorker:
                         chapter_title=chunk.chapter_title,
                         paragraph_ids=chunk.paragraph_ids,
                         source_refs=chunk.source_refs,
+                        page_start=min(page_indices) if page_indices else None,
+                        page_end=max(page_indices) if page_indices else None,
                         embedding=embedding,
                     )
                     session.add(rag_chunk)
@@ -141,7 +149,7 @@ class IndexWorker:
             job = self._jobs.claim(worker_id)
             if job is not None:
                 try:
-                    self.process(job)
+                    self.process(job, worker_id)
                 except Exception:
                     pass
             else:

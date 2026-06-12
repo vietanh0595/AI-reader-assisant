@@ -138,3 +138,22 @@ def get_acknowledged_batch_count(session: Session, version_id: UUID) -> int:
             UploadBatch.acknowledged_at.is_not(None),
         )
     ) or 0
+
+
+def get_actual_block_count(session: Session, version_id: UUID) -> int:
+    from sqlalchemy import func
+    from .models import BookBlock
+    return session.scalar(
+        select(func.count(BookBlock.id)).where(
+            BookBlock.index_version_id == version_id,
+        )
+    ) or 0
+
+
+def get_batch_sequence_numbers(session: Session, version_id: UUID) -> list[int]:
+    rows = session.scalars(
+        select(UploadBatch.sequence_number)
+        .where(UploadBatch.index_version_id == version_id)
+        .order_by(UploadBatch.sequence_number)
+    ).all()
+    return list(rows)

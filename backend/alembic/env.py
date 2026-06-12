@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from backend.app.config import Settings
 from backend.app.db import models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.indexing import models as indexing_models  # noqa: F401
 
 
 config = context.config

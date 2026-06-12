@@ -26,7 +26,9 @@ from .repository import (
     find_completed_version_for_hash,
     find_uploading_version,
     get_acknowledged_batch_count,
+    get_actual_block_count,
     get_batch,
+    get_batch_sequence_numbers,
     get_or_create_book,
     get_owned_book,
     get_owned_version,
@@ -184,11 +186,21 @@ class IndexingService:
                 detail=f"Cannot commit version in status {version.status}.",
             )
 
-        acknowledged = get_acknowledged_batch_count(self._session, version_id)
-        if acknowledged == 0 or version.expected_block_count > acknowledged * 250:
+        actual_blocks = get_actual_block_count(self._session, version_id)
+        if actual_blocks != version.expected_block_count:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Not all batches have been uploaded.",
+                detail=(
+                    f"Block count mismatch: expected {version.expected_block_count}, "
+                    f"got {actual_blocks}."
+                ),
+            )
+
+        sequences = get_batch_sequence_numbers(self._session, version_id)
+        if not sequences or sequences != list(range(len(sequences))):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Batch sequences are missing or non-contiguous.",
             )
 
         version.status = IndexVersionStatus.QUEUED
@@ -243,7 +255,11 @@ class IndexingService:
         version.status = IndexVersionStatus.QUEUED
         version.error_code = None
         version.error_message = None
-        job = IndexJob(index_version_id=version_id, status=JobStatus.QUEUED)
+        job = IndexJob(
+            index_version_id=version_id,
+            status=JobStatus.QUEUED,
+            next_attempt_at=datetime.now(tz=timezone.utc),
+        )
         self._session.add(job)
         self._session.commit()
 
