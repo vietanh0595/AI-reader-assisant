@@ -22,6 +22,7 @@ from .repository import (
     DEFAULT_CHUNKING_VERSION,
     DEFAULT_EMBEDDING_DIMENSIONS,
     DEFAULT_EMBEDDING_MODEL,
+    compute_content_hash,
     create_version,
     find_committed_version_for_hash,
     find_completed_version_for_hash,
@@ -30,6 +31,7 @@ from .repository import (
     get_actual_block_count,
     get_batch,
     get_batch_sequence_numbers,
+    get_book_source_type,
     get_or_create_book,
     get_owned_book,
     get_owned_version,
@@ -228,6 +230,14 @@ class IndexingService:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Batch sequences are missing or non-contiguous.",
+            )
+
+        source_type = get_book_source_type(self._session, version.book_id)
+        computed_hash = compute_content_hash(self._session, version_id, source_type)
+        if computed_hash != version.content_hash:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Content hash mismatch: uploaded blocks do not match declared hash.",
             )
 
         version.status = IndexVersionStatus.QUEUED

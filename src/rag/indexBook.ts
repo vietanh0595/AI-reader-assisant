@@ -98,6 +98,7 @@ export async function indexBook({
 }
 
 const _POLL_INTERVAL_MS = 3_000;
+const _POLL_MAX_ATTEMPTS = 200; // 10 minutes
 const _TERMINAL_STATUSES = new Set<WholeBookAiState['status']>(['ready', 'failed']);
 
 async function pollUntilDone(
@@ -107,8 +108,13 @@ async function pollUntilDone(
   onProgress: (progress: number) => void,
 ): Promise<WholeBookAiState> {
   let current = state;
+  let attempts = 0;
   while (!_TERMINAL_STATUSES.has(current.status)) {
+    if (attempts >= _POLL_MAX_ATTEMPTS) {
+      return { ...current, status: 'failed' };
+    }
     await new Promise<void>((resolve) => setTimeout(resolve, _POLL_INTERVAL_MS));
+    attempts++;
     const polled = await api.getStatus(bookId);
     current = {
       ...current,

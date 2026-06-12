@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import json
 import uuid
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -57,6 +58,29 @@ BOOK_BLOCKS = [
 
 def _gzip_blocks(blocks: list[dict]) -> bytes:
     return gzip.compress(json.dumps({"blocks": blocks}).encode())
+
+
+def _content_hash_of(blocks: list[dict[str, Any]], source_type: str = "epub") -> str:
+    """Replicate the client-side hashReaderBook algorithm."""
+    block_hashes = []
+    for block in sorted(blocks, key=lambda b: b["readingOrder"]):
+        source_ref = block.get("sourceRef", {})
+        canonical_ref = {k: source_ref[k] for k in sorted(source_ref) if source_ref[k] is not None}
+        canonical = json.dumps(
+            [
+                block["paragraphId"],
+                block["readingOrder"],
+                block["blockKind"],
+                block.get("chapterId"),
+                block.get("chapterTitle"),
+                canonical_ref,
+                block["text"].strip(),
+            ],
+            separators=(",", ":"),
+        )
+        block_hashes.append(hashlib.sha256(canonical.encode()).hexdigest())
+    book_input = f"1\n{source_type}\n" + "\n".join(block_hashes)
+    return hashlib.sha256(book_input.encode()).hexdigest()
 
 
 def _fake_embedder(dimensions: int = 1536):
@@ -167,7 +191,7 @@ def test_full_indexing_pipeline(auth_client, book_fixture, migrated_database, ap
             "title": "E2E Test Book",
             "author": "Test Author",
             "sourceType": "epub",
-            "contentHash": "bb" * 32,
+            "contentHash": _content_hash_of(BOOK_BLOCKS),
             "blockCount": len(BOOK_BLOCKS),
             "parserSchemaVersion": 1,
         },

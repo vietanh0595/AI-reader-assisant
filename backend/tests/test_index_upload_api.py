@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,27 +27,30 @@ def make_block(reading_order: int = 0, text: str = "Some text.") -> dict:
     }
 
 
+def batch_request(blocks: list[dict] | None = None) -> dict:
+    if blocks is None:
+        blocks = [make_block(0)]
+    return {"blocks": blocks}
+
+
 def book_index_request(
     *,
     client_book_id: str = "client-book-1",
-    content_hash: str = "a" * 64,
-    block_count: int = 1,
+    blocks: list[dict] | None = None,
+    block_count: int | None = None,
 ) -> dict:
+    """Build a create-or-resume request whose content_hash matches the given blocks."""
+    if blocks is None:
+        blocks = [make_block(0)]
     return {
         "clientBookId": client_book_id,
         "title": "Test Book",
         "author": "Test Author",
         "sourceType": "epub",
-        "contentHash": content_hash,
-        "blockCount": block_count,
+        "contentHash": content_hash_of(blocks),
+        "blockCount": block_count if block_count is not None else len(blocks),
         "parserSchemaVersion": 1,
     }
-
-
-def batch_request(blocks: list[dict] | None = None) -> dict:
-    if blocks is None:
-        blocks = [make_block(0)]
-    return {"blocks": blocks}
 
 
 def gzip_json(obj: dict) -> bytes:
@@ -57,19 +61,44 @@ def sha256_of(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def content_hash_of(blocks: list[dict[str, Any]], source_type: str = "epub") -> str:
+    """Replicate the client-side hashReaderBook algorithm."""
+    block_hashes = []
+    for block in sorted(blocks, key=lambda b: b["readingOrder"]):
+        source_ref = block.get("sourceRef", {})
+        canonical_ref = {k: source_ref[k] for k in sorted(source_ref) if source_ref[k] is not None}
+        canonical = json.dumps(
+            [
+                block["paragraphId"],
+                block["readingOrder"],
+                block["blockKind"],
+                block.get("chapterId"),
+                block.get("chapterTitle"),
+                canonical_ref,
+                block["text"].strip(),
+            ],
+            separators=(",", ":"),
+        )
+        block_hashes.append(hashlib.sha256(canonical.encode()).hexdigest())
+    book_input = f"1\n{source_type}\n" + "\n".join(block_hashes)
+    return hashlib.sha256(book_input.encode()).hexdigest()
+
+
 def create_and_commit_index(
     client: TestClient,
     *,
-    content_hash: str = "a" * 64,
+    blocks: list[dict] | None = None,
     client_book_id: str = "client-book-1",
     migrated_database=None,
 ) -> dict:
+    if blocks is None:
+        blocks = [make_block(0)]
     created = client.post(
-        "/library/books/index", json=book_index_request(content_hash=content_hash, client_book_id=client_book_id)
+        "/library/books/index", json=book_index_request(blocks=blocks, client_book_id=client_book_id)
     ).json()
     book_id = created["bookId"]
     version_id = created["versionId"]
-    body = gzip_json(batch_request())
+    body = gzip_json(batch_request(blocks))
     client.put(
         f"/library/books/{book_id}/index/versions/{version_id}/batches/0",
         content=body,
@@ -116,13 +145,14 @@ def test_create_index_is_idempotent_for_same_client_book(auth_client: TestClient
 def test_completed_content_hash_is_reused_only_for_same_user(
     auth_client: TestClient, other_auth_client: TestClient, migrated_database
 ) -> None:
-    # Create and mark a version as ready for the same book + content hash
+    # Use a distinct block set so the content_hash is unique to this test
+    unique_blocks = [make_block(0, "Unique text for reuse test.")]
     create_and_commit_index(
-        auth_client, content_hash="b" * 64, client_book_id="client-book-1", migrated_database=migrated_database
+        auth_client, blocks=unique_blocks, client_book_id="client-book-1", migrated_database=migrated_database
     )
-    same_user = auth_client.post("/library/books/index", json=book_index_request(content_hash="b" * 64))
+    same_user = auth_client.post("/library/books/index", json=book_index_request(blocks=unique_blocks))
     other_user = other_auth_client.post(
-        "/library/books/index", json=book_index_request(content_hash="b" * 64)
+        "/library/books/index", json=book_index_request(blocks=unique_blocks)
     )
     assert same_user.json()["reused"] is True
     assert other_user.json()["reused"] is False

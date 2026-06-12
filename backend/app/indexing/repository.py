@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Optional
 from uuid import UUID
 
@@ -171,3 +173,45 @@ def get_batch_sequence_numbers(session: Session, version_id: UUID) -> list[int]:
         .order_by(UploadBatch.sequence_number)
     ).all()
     return list(rows)
+
+
+def get_book_source_type(session: Session, book_id: UUID) -> str:
+    book = session.get(Book, book_id)
+    return book.source_type if book else "epub"
+
+
+def compute_content_hash(session: Session, version_id: UUID, source_type: str) -> str:
+    """Replicate the client's hashReaderBook algorithm to verify upload integrity.
+
+    Client (hashBook.ts):
+      blockHash = sha256(JSON.stringify([paragraphId, readingOrder, blockKind,
+                         chapterId|null, chapterTitle|null, canonicalSourceRef, text.trim()]))
+      contentHash = sha256("1\\n{source}\\n" + blockHashes.join("\\n"))
+    """
+    blocks = session.scalars(
+        select(BookBlock)
+        .where(BookBlock.index_version_id == version_id)
+        .order_by(BookBlock.reading_order)
+    ).all()
+
+    block_hashes: list[str] = []
+    for block in blocks:
+        source_ref = block.source_ref or {}
+        # Sort keys and exclude None/null values (mirrors JS canonicalSourceRef)
+        canonical_ref = {k: source_ref[k] for k in sorted(source_ref) if source_ref[k] is not None}
+        canonical = json.dumps(
+            [
+                block.paragraph_id,
+                block.reading_order,
+                block.block_kind,
+                block.chapter_id,    # None serialises as null — matches JS ?? null
+                block.chapter_title,
+                canonical_ref,
+                block.text.strip(),
+            ],
+            separators=(",", ":"),
+        )
+        block_hashes.append(hashlib.sha256(canonical.encode()).hexdigest())
+
+    book_input = f"1\n{source_type}\n" + "\n".join(block_hashes)
+    return hashlib.sha256(book_input.encode()).hexdigest()

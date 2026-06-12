@@ -93,6 +93,13 @@ class IndexWorker:
 
         with self._factory() as session:
             with session.begin():
+                # Wipe any chunks left over from a prior crashed attempt so that
+                # reprocessing doesn't hit the (index_version_id, chunk_order)
+                # unique constraint.
+                session.execute(
+                    text("DELETE FROM rag_chunks WHERE index_version_id = :vid"),
+                    {"vid": str(version_id)},
+                )
                 for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_hash = hashlib.sha256(chunk.embedding_input_text.encode()).hexdigest()
                     page_indices = [

@@ -1,4 +1,3 @@
-import * as Crypto from 'expo-crypto';
 import { strToU8, gzipSync } from 'fflate';
 
 import type { UploadBlock } from './types';
@@ -47,10 +46,12 @@ export async function encodeBatch(blocks: UploadBlock[]): Promise<EncodedBatch> 
   const json = JSON.stringify({ blocks });
   const uncompressed = strToU8(json);
   const compressed = gzipSync(uncompressed);
-  const payloadHash = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    json,
-  );
+
+  // Hash the compressed bytes — exactly what the server receives and verifies.
+  const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', compressed);
+  const payloadHash = Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 
   return {
     blob: new Blob([compressed], { type: 'application/json' }),

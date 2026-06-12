@@ -2527,8 +2527,8 @@ function ReaderApp() {
       );
 
       const token = await getAccessToken();
+      let ok = false;
       if (token) {
-        let ok = false;
         try {
           const resp = await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
             method: 'DELETE',
@@ -2538,18 +2538,18 @@ function ReaderApp() {
         } catch {
           ok = false;
         }
+      }
 
-        if (!ok) {
-          // Revert to previous state so the user can retry.
-          setLibraryItems((items) =>
-            items.map((item) =>
-              item.id === bookId
-                ? { ...item, wholeBookAi: itemToDelete.wholeBookAi }
-                : item,
-            ),
-          );
-          return;
-        }
+      if (!ok) {
+        // Revert to previous state so the user can retry (covers auth expiry too).
+        setLibraryItems((items) =>
+          items.map((item) =>
+            item.id === bookId
+              ? { ...item, wholeBookAi: itemToDelete.wholeBookAi }
+              : item,
+          ),
+        );
+        return;
       }
     }
 
