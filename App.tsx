@@ -34,8 +34,10 @@ import {
 } from 'lucide-react-native';
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
+import { BookSources } from './src/components/BookSources';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
+import type { BookSource } from './src/rag/bookAskTypes';
 import type { WholeBookAiState } from './src/rag/types';
 import {
   ActivityIndicator,
@@ -1721,7 +1723,7 @@ async function requestBookAsk(
   currentReadingOrder: number,
   includeWholeBook: boolean,
   accessToken: string,
-): Promise<{ eyebrow: string; body: string }> {
+): Promise<{ eyebrow: string; body: string; sources: BookSource[] }> {
   const url = `${apiBaseUrl}/library/books/${cloudBookId}/ask`;
   let response: Response;
 
@@ -1754,7 +1756,8 @@ async function requestBookAsk(
     throw new Error('Book ask response was not in the expected format.');
   }
 
-  return { body: (data.body as string).trim(), eyebrow: (data.eyebrow as string).trim() };
+  const sources = Array.isArray(data.sources) ? (data.sources as BookSource[]) : [];
+  return { body: (data.body as string).trim(), eyebrow: (data.eyebrow as string).trim(), sources };
 }
 
 async function requestOcr(payload: OcrRequestPayload): Promise<OcrExtractResponse> {
@@ -2390,6 +2393,7 @@ function ReaderApp() {
   const [assistError, setAssistError] = useState<string | null>(null);
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
+  const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
   const [askContextScope, setAskContextScope] = useState<AskContextScope>('selection');
   const [lastAskRequest, setLastAskRequest] = useState<LastAskRequest | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2458,6 +2462,7 @@ function ReaderApp() {
     setEditingNote(null);
     setEditingNoteText('');
     setQuestion('');
+    setBookAskSources([]);
     setAskContextScope('selection');
     setLastAskRequest(null);
   }
@@ -3182,7 +3187,8 @@ function ReaderApp() {
       );
 
       if (assistRequestId.current === requestId) {
-        setInsight(result);
+        setInsight({ body: result.body, eyebrow: result.eyebrow });
+        setBookAskSources(result.sources);
       }
     } catch (error) {
       if (assistRequestId.current === requestId) {
@@ -3317,6 +3323,17 @@ function ReaderApp() {
                   onExample={showExample}
                   onMakeSimpler={() => void runContextAssist('simpler')}
                   onSave={saveInsight}
+                />
+              ) : null}
+
+              {bookAskSources.length > 0 ? (
+                <BookSourcesPanel
+                  sources={bookAskSources}
+                  onNavigate={(paragraphId) => {
+                    clearSelection();
+                    updateReadingLocation(paragraphId);
+                    setScrollTarget({ nonce: Date.now(), paragraphId });
+                  }}
                 />
               ) : null}
 
@@ -4607,6 +4624,20 @@ function ContextInsightPanel({
   );
 }
 
+function BookSourcesPanel({
+  sources,
+  onNavigate,
+}: {
+  sources: BookSource[];
+  onNavigate: (paragraphId: string) => void;
+}) {
+  return (
+    <Pressable accessible={false} onPress={stopPressPropagation} style={styles.bookSourcesPanel}>
+      <BookSources sources={sources} onNavigate={onNavigate} />
+    </Pressable>
+  );
+}
+
 function QuickActionMenu({
   activeAction,
   isCopied,
@@ -5215,6 +5246,13 @@ const styles = StyleSheet.create({
   selectionPanel: {
     backgroundColor: 'transparent',
     bottom: 106,
+    left: 16,
+    position: 'absolute',
+    right: 16,
+  },
+  bookSourcesPanel: {
+    backgroundColor: 'transparent',
+    bottom: 56,
     left: 16,
     position: 'absolute',
     right: 16,
