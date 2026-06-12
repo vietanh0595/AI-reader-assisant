@@ -14,6 +14,12 @@ DEFAULT_REASONING_EFFORT = "minimal"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://reader:reader@localhost:5432/reader"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDING_DIMENSIONS = 1536
+DEFAULT_RAG_VECTOR_CANDIDATES = 30
+DEFAULT_RAG_KEYWORD_CANDIDATES = 30
+DEFAULT_RAG_FUSED_CANDIDATES = 8
+DEFAULT_RAG_RRF_K = 60
+DEFAULT_RAG_MIN_VECTOR_SIMILARITY = 0.35
+DEFAULT_RAG_CONTEXT_MAX_CHARS = 18_000
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_DIR.parent
 
@@ -37,6 +43,12 @@ class Settings:
     oidc_jwks_url: Optional[str]
     embedding_model: str
     embedding_dimensions: int
+    rag_vector_candidates: int
+    rag_keyword_candidates: int
+    rag_fused_candidates: int
+    rag_rrf_k: int
+    rag_min_vector_similarity: float
+    rag_context_max_chars: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -53,6 +65,12 @@ class Settings:
             oidc_jwks_url=_read_optional_env("OIDC_JWKS_URL"),
             embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip() or DEFAULT_EMBEDDING_MODEL,
             embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))),
+            rag_vector_candidates=int(os.getenv("RAG_VECTOR_CANDIDATES", str(DEFAULT_RAG_VECTOR_CANDIDATES))),
+            rag_keyword_candidates=int(os.getenv("RAG_KEYWORD_CANDIDATES", str(DEFAULT_RAG_KEYWORD_CANDIDATES))),
+            rag_fused_candidates=int(os.getenv("RAG_FUSED_CANDIDATES", str(DEFAULT_RAG_FUSED_CANDIDATES))),
+            rag_rrf_k=int(os.getenv("RAG_RRF_K", str(DEFAULT_RAG_RRF_K))),
+            rag_min_vector_similarity=float(os.getenv("RAG_MIN_VECTOR_SIMILARITY", str(DEFAULT_RAG_MIN_VECTOR_SIMILARITY))),
+            rag_context_max_chars=int(os.getenv("RAG_CONTEXT_MAX_CHARS", str(DEFAULT_RAG_CONTEXT_MAX_CHARS))),
         )
 
     def require_openai_api_key(self) -> str:

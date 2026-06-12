@@ -83,6 +83,12 @@ def app_settings() -> Settings:
         oidc_jwks_url=None,
         embedding_model="text-embedding-3-small",
         embedding_dimensions=1536,
+        rag_vector_candidates=30,
+        rag_keyword_candidates=30,
+        rag_fused_candidates=8,
+        rag_rrf_k=60,
+        rag_min_vector_similarity=0.35,
+        rag_context_max_chars=18_000,
     )
 
 
