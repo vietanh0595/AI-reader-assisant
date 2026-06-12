@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from .chunker import StructureAwareChunker
@@ -103,6 +103,15 @@ class IndexWorker:
                         embedding=embedding,
                     )
                     session.add(rag_chunk)
+
+                session.flush()
+                session.execute(
+                    text(
+                        "UPDATE rag_chunks SET search_vector = to_tsvector('english', embedding_input_text) "
+                        "WHERE index_version_id = :version_id AND search_vector IS NULL"
+                    ),
+                    {"version_id": str(version_id)},
+                )
 
     def _activate_version(self, version_id: UUID) -> None:
         with self._factory() as session:
