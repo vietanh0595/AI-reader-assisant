@@ -36,6 +36,7 @@ class CreateIndexResponse(BaseModel):
     book_id: str = Field(alias="bookId")
     version_id: str = Field(alias="versionId")
     reused: bool
+    acknowledged_batches: int = Field(default=0, alias="acknowledgedBatches")
 
 
 class IndexBatchRequest(BaseModel):

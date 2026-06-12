@@ -61,9 +61,10 @@ export type CreateIndexRequest = {
 };
 
 export type CreateIndexResponse = {
+  acknowledgedBatches: number;
   bookId: string;
-  versionId: string;
   reused: boolean;
+  versionId: string;
 };
 
 export type BatchUploadResponse = {

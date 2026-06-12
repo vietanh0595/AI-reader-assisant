@@ -80,10 +80,12 @@ class IndexingService:
 
         existing = find_uploading_version(self._session, book.id)
         if existing and existing.content_hash == request.content_hash:
+            acked = get_acknowledged_batch_count(self._session, existing.id)
             return CreateIndexResponse(
                 book_id=str(book.id),
                 version_id=str(existing.id),
                 reused=False,
+                acknowledged_batches=acked,
             )
 
         version = create_version(

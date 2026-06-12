@@ -35,6 +35,7 @@ import {
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { SignInSheet } from './src/components/SignInSheet';
+import type { WholeBookAiState } from './src/rag/types';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -205,12 +206,13 @@ type LibraryItem = {
   lastOpenedAt: string;
   readingLocation: ReadingLocation | null;
   savedInsights: SavedInsight[];
+  wholeBookAi: WholeBookAiState;
 };
 
 type PersistedReaderState = {
   activeBookId: string;
   libraryItems: LibraryItem[];
-  schemaVersion: 3;
+  schemaVersion: 4;
 };
 
 type AssistRequestPayload = {
@@ -428,6 +430,12 @@ const sampleBook: ReaderBook = {
   },
 };
 
+const defaultWholeBookAiState: WholeBookAiState = {
+  acknowledgedBatch: -1,
+  progress: 0,
+  status: 'not_enabled',
+};
+
 const sampleLibraryItem: LibraryItem = {
   book: sampleBook,
   id: 'sample:thinking-fast-and-slow',
@@ -435,6 +443,7 @@ const sampleLibraryItem: LibraryItem = {
   lastOpenedAt: 'sample',
   readingLocation: null,
   savedInsights: [],
+  wholeBookAi: defaultWholeBookAiState,
 };
 
 function getParagraphText(paragraph: Paragraph) {
@@ -519,6 +528,7 @@ function hydrateLibraryItem(item: LibraryItem): LibraryItem {
     book,
     readingLocation: hydrateReadingLocation(item.readingLocation, book),
     savedInsights: hydrateSavedInsightSourceRefs(item.savedInsights, book),
+    wholeBookAi: item.wholeBookAi ?? defaultWholeBookAiState,
   };
 }
 
@@ -1125,6 +1135,7 @@ function createLibraryItem(book: ReaderBook): LibraryItem {
     lastOpenedAt: timestamp,
     readingLocation: getInitialReadingLocation(hydratedBook),
     savedInsights: [],
+    wholeBookAi: defaultWholeBookAiState,
   };
 }
 
@@ -1148,6 +1159,7 @@ function createMigratedLibraryItem(
     lastOpenedAt: importedAt,
     readingLocation: restoredLocation,
     savedInsights: hydrateSavedInsightSourceRefs(savedInsights, hydratedBook),
+    wholeBookAi: defaultWholeBookAiState,
   };
 }
 
@@ -1436,7 +1448,7 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
     return {
       activeBookId,
       libraryItems,
-      schemaVersion: 3,
+      schemaVersion: 4,
     };
   }
 
@@ -1450,7 +1462,7 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
     return {
       activeBookId: migratedItem.id,
       libraryItems: [migratedItem],
-      schemaVersion: 3,
+      schemaVersion: 4,
     };
   }
 
@@ -2694,7 +2706,7 @@ function ReaderApp() {
       void writePersistedReaderState({
         activeBookId,
         libraryItems,
-        schemaVersion: 3,
+        schemaVersion: 4,
       }).catch((error) => {
         setImportError(`Could not save reader state. ${getErrorMessage(error)}`);
       });
