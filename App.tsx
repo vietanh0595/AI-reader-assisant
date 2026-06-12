@@ -60,7 +60,7 @@ type FollowUpAction = 'simpler';
 type SummaryAction = 'summarize';
 type InsightAction = QuickAction | FollowUpAction | SummaryAction;
 type AssistContextScope = 'paragraph' | 'visiblePage' | 'chapter';
-type AskContextScope = 'selection' | 'visiblePage' | 'chapter';
+type AskContextScope = 'selection' | 'visiblePage' | 'chapter' | 'book';
 type LastAskRequest = {
   contextScope: AssistContextScope;
   question: string;
@@ -1714,6 +1714,49 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
   };
 }
 
+async function requestBookAsk(
+  cloudBookId: string,
+  question: string,
+  currentParagraphId: string,
+  currentReadingOrder: number,
+  includeWholeBook: boolean,
+  accessToken: string,
+): Promise<{ eyebrow: string; body: string }> {
+  const url = `${apiBaseUrl}/library/books/${cloudBookId}/ask`;
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      body: JSON.stringify({
+        question,
+        currentParagraphId,
+        currentReadingOrder,
+        includeWholeBook,
+      }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+  } catch (error) {
+    throw new Error(`Could not reach ${url}. ${getErrorMessage(error)}`);
+  }
+
+  if (!response.ok) {
+    const errorDetail = await readResponseError(response);
+    throw new Error(errorDetail ?? `Book ask failed with status ${response.status}.`);
+  }
+
+  const data: unknown = await response.json();
+
+  if (!isRecord(data) || typeof data.eyebrow !== 'string' || typeof data.body !== 'string') {
+    throw new Error('Book ask response was not in the expected format.');
+  }
+
+  return { body: (data.body as string).trim(), eyebrow: (data.eyebrow as string).trim() };
+}
+
 async function requestOcr(payload: OcrRequestPayload): Promise<OcrExtractResponse> {
   const ocrUrl = `${apiBaseUrl}/ocr/extract`;
   const controller = new AbortController();
@@ -2321,7 +2364,7 @@ function getReaderHtmlTag(blockKind: ReaderBlockKind) {
 }
 
 function ReaderApp() {
-  const { error: authError, isAuthenticated, isLoading: isAuthLoading, signIn, signOut } = useAuth();
+  const { error: authError, getAccessToken, isAuthenticated, isLoading: isAuthLoading, signIn, signOut } = useAuth();
   const [pendingAuthenticatedAction, setPendingAuthenticatedAction] = useState<'import' | 'scan' | null>(null);
   const [isSignInOpen, setIsSignInOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -3103,17 +3146,76 @@ function ReaderApp() {
     }, 1500);
   }
 
+  async function runBookAsk(questionText: string) {
+    const cloudBookId = activeLibraryItem.wholeBookAi.cloudBookId;
+
+    if (!cloudBookId) {
+      setAssistError('Whole-Book AI is not enabled for this book.');
+      return;
+    }
+
+    const token = await getAccessToken();
+
+    if (!token) {
+      setAssistError('Sign in is required to use Book scope.');
+      return;
+    }
+
+    const paragraphId = readingLocation?.paragraphId ?? currentBook.paragraphs[0]?.id ?? '';
+    const readingOrder = getParagraphIndex(paragraphId, currentBook.paragraphs);
+    const requestId = assistRequestId.current + 1;
+    assistRequestId.current = requestId;
+
+    setSelectedAction('ask');
+    setInsight(null);
+    setAssistError(null);
+    setIsAssistLoading(true);
+
+    try {
+      const result = await requestBookAsk(
+        cloudBookId,
+        questionText,
+        paragraphId,
+        readingOrder,
+        true,
+        token,
+      );
+
+      if (assistRequestId.current === requestId) {
+        setInsight(result);
+      }
+    } catch (error) {
+      if (assistRequestId.current === requestId) {
+        setAssistError(getErrorMessage(error));
+      }
+    } finally {
+      if (assistRequestId.current === requestId) {
+        setIsAssistLoading(false);
+      }
+    }
+  }
+
   function submitQuestion() {
     const trimmedQuestion = question.trim();
 
-    if (!trimmedQuestion || (!selection && !contextSelection)) {
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    setIsAskOpen(false);
+    setQuestion('');
+
+    if (askContextScope === 'book') {
+      void runBookAsk(trimmedQuestion);
+      return;
+    }
+
+    if (!selection && !contextSelection) {
       return;
     }
 
     const contextScope = getAssistScopeForAsk(askContextScope);
 
-    setIsAskOpen(false);
-    setQuestion('');
     setLastAskRequest({
       contextScope,
       question: trimmedQuestion,
@@ -3221,6 +3323,7 @@ function ReaderApp() {
               {isAskOpen && (selection || contextSelection) ? (
                 <AskSheet
                   contextScope={askContextScope}
+                  isBookIndexReady={activeLibraryItem.wholeBookAi.status === 'ready'}
                   question={question}
                   selectedText={(selection ?? contextSelection)?.text ?? ''}
                   onChangeContextScope={setAskContextScope}
@@ -4383,6 +4486,8 @@ function getSearchScopeLabel(scope: SearchScope) {
 
 function getAskContextScopeLabel(scope: AskContextScope) {
   switch (scope) {
+    case 'book':
+      return 'Book';
     case 'chapter':
       return 'Chapter';
     case 'visiblePage':
@@ -4393,7 +4498,9 @@ function getAskContextScopeLabel(scope: AskContextScope) {
 }
 
 function getAssistScopeForAsk(scope: AskContextScope): AssistContextScope {
-  return scope === 'selection' ? 'paragraph' : scope;
+  if (scope === 'selection') return 'paragraph';
+  if (scope === 'book') return 'chapter';
+  return scope;
 }
 
 function getSearchScopeEmptyText(scope: SearchScope) {
@@ -4638,6 +4745,7 @@ function InsightCard({
 
 function AskSheet({
   contextScope,
+  isBookIndexReady,
   question,
   selectedText,
   onChangeContextScope,
@@ -4646,6 +4754,7 @@ function AskSheet({
   onSubmit,
 }: {
   contextScope: AskContextScope;
+  isBookIndexReady: boolean;
   question: string;
   selectedText: string;
   onChangeContextScope: (scope: AskContextScope) => void;
@@ -4654,6 +4763,9 @@ function AskSheet({
   onSubmit: () => void;
 }) {
   const canSubmit = question.trim().length > 0;
+  const scopeOptions: AskContextScope[] = isBookIndexReady
+    ? ['selection', 'visiblePage', 'chapter', 'book']
+    : ['selection', 'visiblePage', 'chapter'];
 
   return (
     <View style={styles.sheetLayer}>
@@ -4668,7 +4780,7 @@ function AskSheet({
             {selectedText}
           </Text>
           <View style={styles.askScopeRow}>
-            {(['selection', 'visiblePage', 'chapter'] as AskContextScope[]).map((option) => {
+            {scopeOptions.map((option) => {
               const isActive = contextScope === option;
 
               return (
