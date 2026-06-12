@@ -8,7 +8,12 @@ from uuid import uuid4
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jwt import PyJWKClientConnectionError, PyJWKSetError
+from jwt import (
+    InvalidKeyError,
+    PyJWKClientConnectionError,
+    PyJWKClientError,
+    PyJWKSetError,
+)
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -284,6 +289,8 @@ def test_jwt_validator_normalizes_value_errors(monkeypatch, rsa_private_key):
     [
         PyJWKClientConnectionError("private network details"),
         PyJWKSetError("invalid provider key set"),
+        InvalidKeyError("invalid provider key material"),
+        ValueError("invalid provider key data"),
     ],
 )
 def test_jwt_validator_classifies_jwks_availability_errors(
@@ -295,6 +302,18 @@ def test_jwt_validator_classifies_jwks_availability_errors(
     validator = make_unavailable_validator(monkeypatch, provider_error)
 
     with pytest.raises(AuthProviderUnavailableError):
+        validator.validate("signed-token")
+
+
+def test_jwt_validator_rejects_token_without_matching_signing_key(monkeypatch):
+    from backend.app.auth.jwt import InvalidAuthTokenError
+
+    validator = make_unavailable_validator(
+        monkeypatch,
+        PyJWKClientError('Unable to find a signing key that matches: "missing"'),
+    )
+
+    with pytest.raises(InvalidAuthTokenError):
         validator.validate("signed-token")
 
 
@@ -392,6 +411,48 @@ def test_auth_me_reports_jwks_provider_unavailable(
     assert response.status_code == 503
     assert response.json() == {"detail": "Sign-in is temporarily unavailable."}
     assert "private upstream network details" not in response.text
+
+
+def test_auth_me_reports_invalid_jwks_text_as_provider_unavailable(
+    test_app,
+    test_client,
+    monkeypatch,
+):
+    test_app.state.jwt_validator = make_unavailable_validator(
+        monkeypatch,
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+    )
+
+    response = test_client.get(
+        "/auth/me",
+        headers={"Authorization": "Bearer signed-token"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Sign-in is temporarily unavailable."}
+    assert "invalid start byte" not in response.text
+
+
+def test_auth_me_rejects_non_numeric_exp_claim(
+    test_app,
+    test_client,
+    monkeypatch,
+    rsa_private_key,
+):
+    test_app.state.jwt_validator = make_validator(
+        monkeypatch,
+        rsa_private_key.public_key(),
+    )
+    token = encode_token(rsa_private_key, exp="not-a-number")
+
+    response = test_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid authentication credentials."}
 
 
 @pytest.mark.integration

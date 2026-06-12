@@ -6,9 +6,12 @@ from typing import Optional
 
 import jwt
 from jwt import (
+    DecodeError,
+    InvalidKeyError,
     PyJWKClient,
     PyJWKClientConnectionError,
     PyJWKClientError,
+    PyJWKError,
     PyJWKSetError,
     PyJWTError,
 )
@@ -66,23 +69,23 @@ class JwtValidator:
             return self._jwks_client.get_signing_key_from_jwt(token)
         except (
             JSONDecodeError,
+            InvalidKeyError,
             PyJWKClientConnectionError,
+            PyJWKError,
             PyJWKSetError,
+            TypeError,
+            UnicodeDecodeError,
+            ValueError,
         ) as exc:
             raise AuthProviderUnavailableError(
                 "OIDC signing keys are unavailable."
             ) from exc
         except PyJWKClientError as exc:
-            if str(exc).startswith(
-                (
-                    "The JWKS endpoint did not return a JSON object",
-                    "The JWKS endpoint did not contain any signing keys",
-                )
-            ):
-                raise AuthProviderUnavailableError(
-                    "OIDC signing keys are unavailable."
-                ) from exc
+            if str(exc).startswith("Unable to find a signing key that matches:"):
+                raise InvalidAuthTokenError("Token validation failed.") from exc
 
-            raise InvalidAuthTokenError("Token validation failed.") from exc
-        except (PyJWTError, TypeError, ValueError) as exc:
+            raise AuthProviderUnavailableError(
+                "OIDC signing keys are unavailable."
+            ) from exc
+        except (DecodeError, PyJWTError) as exc:
             raise InvalidAuthTokenError("Token validation failed.") from exc
