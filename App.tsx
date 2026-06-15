@@ -3255,6 +3255,8 @@ function ReaderApp() {
   async function runIndexBook() {
     const token = await getAccessToken();
     if (!token) {
+      // Close the Book AI sheet first so the sign-in prompt isn't hidden behind it.
+      setIsWholeBookAiOpen(false);
       setIsSignInOpen(true);
       return;
     }
@@ -3298,11 +3300,11 @@ function ReaderApp() {
     setLibraryItems((items) =>
       items.map((item) =>
         item.id === activeId
-          ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'uploading' } }
+          ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'uploading', error: undefined } }
           : item,
       ),
     );
-    setIsWholeBookAiOpen(false);
+    // Keep the sheet open so the user sees Uploading → Indexing → Ready progress.
 
     try {
       const nextState = await indexBook({
@@ -3332,11 +3334,15 @@ function ReaderApp() {
           item.id === activeId ? { ...item, wholeBookAi: nextState } : item,
         ),
       );
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? `Indexing failed: ${error.message}`
+          : 'Indexing failed. Check your connection and try again.';
       setLibraryItems((items) =>
         items.map((item) =>
           item.id === activeId
-            ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'failed' } }
+            ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'failed', error: message } }
             : item,
         ),
       );

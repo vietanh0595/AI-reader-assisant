@@ -32,13 +32,17 @@ export async function indexBook({
   localState,
   onProgress,
 }: IndexBookOptions): Promise<WholeBookAiState> {
-  const { blocks, blockCount, contentHash } = await hashReaderBook(book);
+  const normalizedSource = book.source === 'sample' ? 'epub' : book.source;
+  const { blocks, blockCount, contentHash } = await hashReaderBook({
+    ...book,
+    source: normalizedSource,
+  });
 
   const { bookId, versionId, reused, acknowledgedBatches } = await api.createOrResume({
     clientBookId: book.clientBookId,
     title: book.title,
     author: book.author,
-    sourceType: book.source === 'sample' ? 'epub' : book.source,
+    sourceType: normalizedSource,
     fileName: book.fileName,
     contentHash,
     blockCount,

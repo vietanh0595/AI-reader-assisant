@@ -202,7 +202,7 @@ def compute_content_hash(session: Session, version_id: UUID, source_type: str) -
         canonical = json.dumps(
             [
                 block.paragraph_id,
-                block.reading_order,
+                int(block.reading_order),  # guard against float from ORM
                 block.block_kind,
                 block.chapter_id,    # None serialises as null — matches JS ?? null
                 block.chapter_title,
@@ -210,6 +210,8 @@ def compute_content_hash(session: Session, version_id: UUID, source_type: str) -
                 block.text.strip(),
             ],
             separators=(",", ":"),
+            ensure_ascii=False,  # JS JSON.stringify keeps Unicode as-is
+            sort_keys=True,  # recursively sort nested keys; mirrors JS deepSortKeys
         )
         block_hashes.append(hashlib.sha256(canonical.encode()).hexdigest())
 

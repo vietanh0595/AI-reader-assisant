@@ -2,15 +2,30 @@ import * as Crypto from 'expo-crypto';
 
 import type { UploadBlock, DocumentSourceRef } from './types';
 
-function canonicalSourceRef(ref: DocumentSourceRef): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const keys = Object.keys(ref).sort() as (keyof DocumentSourceRef)[];
-  for (const key of keys) {
+function deepSortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(deepSortKeys);
+  }
+  if (value !== null && typeof value === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = deepSortKeys((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+function canonicalSourceRef(ref: DocumentSourceRef): unknown {
+  // Filter undefined, then recursively sort all nested keys so serialization is
+  // stable regardless of JS insertion order or PostgreSQL JSONB key reordering.
+  const filtered: Record<string, unknown> = {};
+  for (const key of Object.keys(ref) as (keyof DocumentSourceRef)[]) {
     if (ref[key] !== undefined) {
-      result[key as string] = ref[key];
+      filtered[key as string] = ref[key];
     }
   }
-  return result;
+  return deepSortKeys(filtered);
 }
 
 export async function hashUploadBlock(block: UploadBlock): Promise<string> {

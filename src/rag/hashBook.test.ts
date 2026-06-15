@@ -71,3 +71,31 @@ test('book hash output is 64 character hex string', async () => {
   expect(result.blockCount).toBe(1);
   expect(result.blocks).toHaveLength(1);
 });
+
+test('block hash is stable regardless of boundingBox key insertion order', async () => {
+  // Regression: JSONB reorders nested object keys; deepSortKeys must normalize both sides.
+  const blockNativeOrder: UploadBlock = {
+    ...makeBlock('PDF paragraph.', 0),
+    sourceRef: {
+      source: 'pdf',
+      boundingBox: { y: 10, x: 5, width: 100, height: 50, unit: 'px' },
+    },
+  };
+  const blockAlphaOrder: UploadBlock = {
+    ...makeBlock('PDF paragraph.', 0),
+    sourceRef: {
+      source: 'pdf',
+      boundingBox: { height: 50, unit: 'px', width: 100, x: 5, y: 10 },
+    },
+  };
+  expect(await hashUploadBlock(blockNativeOrder)).toBe(await hashUploadBlock(blockAlphaOrder));
+});
+
+test('block hash uses raw Unicode, not escaped sequences', async () => {
+  // Regression: ensure_ascii=False on the Python side means JS must NOT escape Unicode.
+  const unicodeBlock = makeBlock('Café — 中文テスト', 0);
+  const escapedBlock = makeBlock('Caf\\u00e9 \\u2014 \\u4e2d\\u6587\\u30c6\\u30b9\\u30c8', 0);
+  const unicodeHash = await hashUploadBlock(unicodeBlock);
+  expect(unicodeHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(unicodeHash).not.toBe(await hashUploadBlock(escapedBlock));
+});

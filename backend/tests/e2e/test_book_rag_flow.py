@@ -77,6 +77,8 @@ def _content_hash_of(blocks: list[dict[str, Any]], source_type: str = "epub") ->
                 block["text"].strip(),
             ],
             separators=(",", ":"),
+            ensure_ascii=False,
+            sort_keys=True,
         )
         block_hashes.append(hashlib.sha256(canonical.encode()).hexdigest())
     book_input = f"1\n{source_type}\n" + "\n".join(block_hashes)

@@ -47,7 +47,7 @@ test('discloses normalized text upload before enabling', async () => {
   expect(screen.getByRole('button', { name: /enable whole-book ai/i })).toBeTruthy();
 });
 
-test('shows progress bar while uploading', async () => {
+test('shows progress percentage while uploading', async () => {
   await render(
     <WholeBookAiSheet
       state={uploadingState}
@@ -57,9 +57,10 @@ test('shows progress bar while uploading', async () => {
     />,
   );
   expect(screen.getByText(/uploading/i)).toBeTruthy();
+  expect(screen.getByText('40%')).toBeTruthy();
 });
 
-test('shows progress bar while indexing', async () => {
+test('shows progress percentage while indexing', async () => {
   await render(
     <WholeBookAiSheet
       state={indexingState}
@@ -68,19 +69,24 @@ test('shows progress bar while indexing', async () => {
       onClose={jest.fn()}
     />,
   );
-  expect(screen.getByText(/indexing/i)).toBeTruthy();
+  expect(screen.getByText('Indexing…')).toBeTruthy();
+  expect(screen.getByText('70%')).toBeTruthy();
 });
 
-test('shows ready confirmation when complete', async () => {
+test('shows ready confirmation with a dismiss action', async () => {
+  const onClose = jest.fn();
   await render(
     <WholeBookAiSheet
       state={readyState}
       onEnable={jest.fn()}
       onRetry={jest.fn()}
-      onClose={jest.fn()}
+      onClose={onClose}
     />,
   );
   expect(screen.getByText(/whole-book ai is ready/i)).toBeTruthy();
+  const startButton = screen.getByRole('button', { name: /start asking/i });
+  fireEvent.press(startButton);
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 test('shows error and retry button on failure', async () => {

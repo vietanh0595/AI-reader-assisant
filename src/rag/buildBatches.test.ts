@@ -4,6 +4,10 @@ jest.mock('expo-crypto', () => ({
     const buf = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
     return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
   },
+  digest: async (_alg: string, data: Uint8Array) => {
+    // TS 5.7+: Uint8Array<ArrayBufferLike> is not assignable to BufferSource directly
+    return globalThis.crypto.subtle.digest('SHA-256', data.buffer as ArrayBuffer);
+  },
 }));
 
 import { buildUploadBatches, encodeBatch } from './buildBatches';

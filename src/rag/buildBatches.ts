@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import { strToU8, gzipSync } from 'fflate';
 
 import type { UploadBlock } from './types';
@@ -48,7 +49,8 @@ export async function encodeBatch(blocks: UploadBlock[]): Promise<EncodedBatch> 
   const compressed = gzipSync(uncompressed);
 
   // Hash the compressed bytes — exactly what the server receives and verifies.
-  const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', compressed);
+  // expo-crypto works on both Hermes (native) and browser environments.
+  const hashBuf = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, compressed);
   const payloadHash = Array.from(new Uint8Array(hashBuf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
