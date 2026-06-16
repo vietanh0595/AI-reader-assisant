@@ -48,7 +48,11 @@ def _build_answerer(request: Request) -> BookAnswerer:
     settings = request.app.state.settings
     from openai import OpenAI
     client = OpenAI(api_key=settings.openai_api_key)
-    return BookAnswerer(client=client, model=settings.openai_model)
+    return BookAnswerer(
+        client=client,
+        model=settings.openai_model,
+        reasoning_effort=settings.openai_reasoning_effort,
+    )
 
 
 @router.post("/{book_id}/ask", response_model=BookAskResponse)

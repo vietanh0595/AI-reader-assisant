@@ -71,7 +71,7 @@ type ConfiguredAuthProviderProps = PropsWithChildren<{
 
 function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProps) {
   const discovery = AuthSession.useAutoDiscovery(config.issuerUrl);
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: REDIRECT_SCHEME });
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: REDIRECT_SCHEME, path: 'callback' });
   const [request, , promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: config.clientId,

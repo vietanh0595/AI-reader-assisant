@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from .config import get_settings
+from .db.models import User  # noqa: F401 — registers 'users' table in shared MetaData
 from .indexing.embeddings import OpenAIEmbeddingProvider
 from .indexing.worker import IndexWorker
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 def build_worker(settings) -> IndexWorker:

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Optional
 from uuid import UUID
 
 from .models import EvidenceItem, EvidenceSet
 from .repository import RetrievalRepository
 from .rrf import reciprocal_rank_fusion
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_VECTOR_CANDIDATES = 30
 _DEFAULT_KEYWORD_CANDIDATES = 30
@@ -67,10 +70,16 @@ class RetrievalService:
             (c.vector_similarity or 0.0 for c in vector_results),
             default=0.0,
         )
-        is_weak = best_similarity < self._min_similarity and not keyword_results
+        logger.info(
+            "retrieval: book=%s question=%r best_similarity=%.3f vector=%d keyword=%d",
+            book_id, question, best_similarity, len(vector_results), len(keyword_results),
+        )
 
-        if is_weak:
-            return EvidenceSet(items=[], supported=False, reason="weak_retrieval")
+        # Only gate on truly empty results — structural queries like "summarize chapter 5"
+        # score low on both vector similarity and keyword FTS but still return relevant
+        # chunks; let the model decide if the evidence is sufficient.
+        if not vector_results and not keyword_results:
+            return EvidenceSet(items=[], supported=False, reason="no_results")
 
         if max_reading_order is not None:
             vector_results = [c for c in vector_results if c.end_reading_order <= max_reading_order]

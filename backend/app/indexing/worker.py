@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
@@ -60,7 +63,7 @@ class IndexWorker:
             self._activate_version(version_id)
             self._jobs.complete(job_id, effective_worker_id)
         except Exception as exc:
-            self._mark_failed(version_id)
+            self._mark_failed(version_id, "indexing_error", str(exc))
             self._jobs.fail_retryable(job_id, effective_worker_id, "indexing_error", str(exc))
             raise
         finally:
@@ -150,22 +153,27 @@ class IndexWorker:
                 if book:
                     book.active_index_version_id = version_id
 
-    def _mark_failed(self, version_id: UUID) -> None:
+    def _mark_failed(self, version_id: UUID, error_code: str = "indexing_error", error_message: str = "") -> None:
         with self._factory() as session:
             with session.begin():
                 ver = session.get(IndexVersion, version_id)
                 if ver:
                     ver.status = IndexVersionStatus.FAILED
+                    ver.error_code = error_code
+                    ver.error_message = error_message
 
     def run_forever(self, poll_seconds: float = 2.0) -> None:
         import socket
         worker_id = f"{_WORKER_ID_PREFIX}-{socket.gethostname()}"
+        logger.info("Worker started: %s", worker_id)
         while True:
             job = self._jobs.claim(worker_id)
             if job is not None:
+                logger.info("Claimed job %s for version %s", job.id, job.index_version_id)
                 try:
                     self.process(job, worker_id)
+                    logger.info("Job %s completed successfully", job.id)
                 except Exception:
-                    pass
+                    logger.exception("Job %s failed", job.id)
             else:
                 time.sleep(poll_seconds)

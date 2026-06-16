@@ -8,7 +8,7 @@ export type UploadBatchRequest = {
   idempotencyKey: string;
   blocks: UploadBlock[];
   payloadHash: string;
-  blob: Blob;
+  body: string;
 };
 
 export type IndexApi = {
@@ -53,18 +53,17 @@ export function createIndexApi(client: ApiClient): IndexApi {
       };
     },
 
-    async uploadBatch({ bookId, versionId, sequence, idempotencyKey, blob, payloadHash }) {
+    async uploadBatch({ bookId, versionId, sequence, idempotencyKey, body, payloadHash }) {
       const res = await client.fetch(
         `/library/books/${bookId}/index/versions/${versionId}/batches/${sequence}`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Content-Encoding': 'gzip',
             'Idempotency-Key': idempotencyKey,
             'X-Payload-SHA256': payloadHash,
           },
-          body: blob,
+          body,
         },
       );
       if (!res.ok) {

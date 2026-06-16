@@ -72,7 +72,7 @@ export async function indexBook({
 
   for (let seq = resumeFromSequence; seq < batches.length; seq++) {
     const batchBlocks = batches[seq];
-    const { blob, payloadHash } = await encodeBatch(batchBlocks);
+    const { body, payloadHash } = await encodeBatch(batchBlocks);
 
     await api.uploadBatch({
       bookId,
@@ -81,7 +81,7 @@ export async function indexBook({
       idempotencyKey: `${versionId}-batch-${seq}`,
       blocks: batchBlocks,
       payloadHash,
-      blob,
+      body,
     });
 
     lastAcknowledged = seq;
@@ -124,6 +124,7 @@ async function pollUntilDone(
       ...current,
       status: (polled.status as WholeBookAiState['status']) ?? current.status,
       progress: polled.progress ?? current.progress,
+      error: polled.errorMessage ?? current.error,
     };
     onProgress(current.progress);
   }

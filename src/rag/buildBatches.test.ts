@@ -50,21 +50,17 @@ test('all blocks are included across batches', () => {
   expect(total).toBe(375);
 });
 
-test('encodeBatch returns blob, hash, and block count', async () => {
+test('encodeBatch returns body, hash, and block count', async () => {
   const blocks = makeBlocks(5);
   const result = await encodeBatch(blocks);
-  expect(result.blob).toBeInstanceOf(Blob);
+  expect(typeof result.body).toBe('string');
   expect(result.payloadHash).toMatch(/^[a-f0-9]{64}$/);
   expect(result.blockCount).toBe(5);
 });
 
-test('encodeBatch gzip is decompressible', async () => {
+test('encodeBatch body is valid JSON containing the blocks', async () => {
   const blocks = makeBlocks(3);
   const result = await encodeBatch(blocks);
-  const buffer = await result.blob.arrayBuffer();
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { gunzipSync } = require('fflate') as typeof import('fflate');
-  const decompressed = gunzipSync(new Uint8Array(buffer));
-  const parsed = JSON.parse(new TextDecoder().decode(decompressed));
+  const parsed = JSON.parse(result.body);
   expect(parsed.blocks).toHaveLength(3);
 });

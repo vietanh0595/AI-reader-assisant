@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, Optional
 
@@ -7,6 +8,8 @@ from pydantic import BaseModel, Field
 
 from .models import BookAnswer, BookSource, EvidenceSet
 from .prompts import BOOK_ANSWER_SYSTEM_PROMPT, build_book_answer_prompt
+
+logger = logging.getLogger(__name__)
 
 _INSUFFICIENT_EVIDENCE_EYEBROW = "Insufficient evidence"
 _INSUFFICIENT_EVIDENCE_BODY = (
@@ -49,7 +52,21 @@ class BookAnswerer:
             kwargs["reasoning"] = {"effort": self._reasoning_effort}
 
         response = self._client.responses.parse(**kwargs)
-        parsed: ModelBookAnswer = response.output_parsed
+        parsed: Optional[ModelBookAnswer] = response.output_parsed
+
+        if parsed is None:
+            logger.error(
+                "output_parsed is None — model=%s output=%r",
+                self._model,
+                getattr(response, "output", None),
+            )
+            return BookAnswer(
+                request_id=request_id,
+                eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
+                body=_INSUFFICIENT_EVIDENCE_BODY,
+                supported=False,
+                sources=[],
+            )
 
         if not parsed.supported:
             return BookAnswer(

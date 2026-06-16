@@ -1,5 +1,4 @@
 import * as Crypto from 'expo-crypto';
-import { strToU8, gzipSync } from 'fflate';
 
 import type { UploadBlock } from './types';
 
@@ -38,25 +37,23 @@ export function buildUploadBatches(
 }
 
 export type EncodedBatch = {
-  blob: Blob;
+  body: string;
   payloadHash: string;
   blockCount: number;
 };
 
 export async function encodeBatch(blocks: UploadBlock[]): Promise<EncodedBatch> {
-  const json = JSON.stringify({ blocks });
-  const uncompressed = strToU8(json);
-  const compressed = gzipSync(uncompressed);
-
-  // Hash the compressed bytes — exactly what the server receives and verifies.
-  // expo-crypto works on both Hermes (native) and browser environments.
-  const hashBuf = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, compressed);
-  const payloadHash = Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  // Send uncompressed JSON: React Native cannot build a Blob from binary bytes
+  // nor reliably send a raw byte body, so we use a plain string the server can
+  // hash and parse directly. The hash covers the exact UTF-8 body the server reads.
+  const body = JSON.stringify({ blocks });
+  const payloadHash = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    body,
+  );
 
   return {
-    blob: new Blob([compressed], { type: 'application/json' }),
+    body,
     payloadHash,
     blockCount: blocks.length,
   };
