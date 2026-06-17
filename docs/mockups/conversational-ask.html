@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conversational Ask — mockup</title>
+<style>
+  :root {
+    --paper: #fffdf8;
+    --ink: #171715;
+    --sage-dark: #244f38;
+    --sage-soft: #edf3e9;
+    --hairline: #e4dfd6;
+    --warm-note: #f7f1dd;
+    --warm-note-border: #e7dcb8;
+    --muted: #78746d;
+    --chip-bg: #f3f1ec;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #d9d5cc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    padding: 28px;
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .label {
+    width: 390px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #555049;
+    margin-bottom: 10px;
+    letter-spacing: .3px;
+  }
+  .col { display: flex; flex-direction: column; align-items: center; }
+
+  /* phone frame */
+  .phone {
+    width: 390px;
+    height: 800px;
+    background: var(--paper);
+    border-radius: 44px;
+    border: 10px solid #1c1c1e;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.32);
+  }
+  .statusbar {
+    height: 44px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 26px; font-size: 13px; font-weight: 700; color: var(--ink);
+  }
+
+  /* reader behind */
+  .reader { padding: 4px 24px; }
+  .reader.dim { filter: grayscale(.2) brightness(.92); opacity: .55; }
+  .reader-head { text-align: center; margin-bottom: 14px; }
+  .reader-title { font-weight: 800; font-size: 17px; }
+  .reader-author { font-size: 13px; color: var(--muted); }
+  .reader p {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 16px; line-height: 1.5; margin: 0 0 14px; text-indent: 1.1em;
+  }
+
+  /* bottom sheet */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: var(--paper);
+    border-top-left-radius: 22px; border-top-right-radius: 22px;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.12);
+    border-top: 1px solid var(--hairline);
+    display: flex; flex-direction: column;
+  }
+  .sheet-tall { height: 560px; }
+  .handle { width: 42px; height: 5px; border-radius: 3px; background: #d7d2c8; margin: 9px auto 4px; }
+
+  .sheet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 18px 10px; border-bottom: 1px solid var(--hairline);
+  }
+  .sheet-title { font-weight: 800; font-size: 15px; }
+  .head-right { display: flex; align-items: center; gap: 14px; }
+
+  .toggle { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--sage-dark); }
+  .switch { width: 38px; height: 22px; border-radius: 12px; background: var(--sage-dark); position: relative; }
+  .switch .knob { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+  .trash { color: var(--muted); font-size: 15px; }
+
+  /* conversation */
+  .convo { flex: 1; overflow-y: auto; padding: 14px 16px 6px; }
+
+  .ctx-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--sage-soft); border: 1px solid #cfe0d2; color: #2c5a40;
+    border-radius: 14px; padding: 6px 10px; font-size: 12px; margin-bottom: 12px; max-width: 100%;
+  }
+  .ctx-chip .x { color: #5d7c66; font-weight: 700; }
+  .ctx-chip .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+
+  .turn { margin-bottom: 16px; }
+  .user-row { display: flex; justify-content: flex-end; }
+  .user-bubble {
+    background: var(--sage-dark); color: #fff; border-radius: 16px 16px 4px 16px;
+    padding: 10px 13px; font-size: 14px; line-height: 1.4; max-width: 80%;
+  }
+
+  .answer {
+    background: var(--warm-note); border: 1px solid var(--warm-note-border);
+    border-radius: 14px; padding: 12px 13px;
+  }
+  .eyebrow { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 13px; margin-bottom: 7px; }
+  .spark { color: #b8893b; }
+  .answer p { margin: 0; font-size: 14px; line-height: 1.5; }
+
+  .sources-label { font-size: 10px; font-weight: 800; letter-spacing: .5px; color: var(--muted); margin: 12px 0 7px; text-transform: uppercase; }
+  .src-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .src-chip {
+    flex: 0 0 auto; width: 168px; background: var(--chip-bg); border: 1px solid var(--hairline);
+    border-radius: 9px; padding: 9px 10px;
+  }
+  .src-chip .ch { color: var(--sage-dark); font-weight: 800; font-size: 11px; margin-bottom: 2px; }
+  .src-chip .pg { color: #6b7280; font-size: 10px; margin-bottom: 4px; }
+  .src-chip .ex { color: #3f3b34; font-size: 11.5px; line-height: 1.35; }
+
+  .answer-actions { display: flex; gap: 14px; margin-top: 11px; }
+  .mini-act { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #4a463f; }
+
+  .thinking { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; font-style: italic; padding: 4px 2px; }
+  .dots { width: 14px; height: 14px; border: 2px solid #cdc7ba; border-top-color: var(--sage-dark); border-radius: 50%; }
+
+  /* input */
+  .input-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px 16px; border-top: 1px solid var(--hairline); }
+  .input-box { flex: 1; background: #fff; border: 1px solid var(--hairline); border-radius: 22px; padding: 11px 15px; font-size: 14px; color: var(--muted); }
+  .send { width: 40px; height: 40px; border-radius: 50%; background: var(--sage-dark); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  /* footer entry */
+  .footer { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: var(--paper); border-top: 1px solid var(--hairline);
+            display: flex; align-items: center; justify-content: space-around; color: #3f3b34; font-size: 18px; }
+  .footer .ask-pill { display: flex; align-items: center; gap: 6px; background: var(--sage-dark); color: #fff; font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 20px; }
+
+  /* peek bar */
+  .peek {
+    position: absolute; left: 12px; right: 12px; bottom: 74px;
+    background: var(--paper); border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 8px 22px rgba(0,0,0,.14); padding: 12px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .peek .pk-txt { font-size: 13px; color: #3f3b34; }
+  .peek .pk-txt b { color: var(--ink); }
+  .peek .pk-up { color: var(--sage-dark); font-weight: 800; font-size: 13px; }
+  .highlight { background: #d8e6d2; border-radius: 3px; padding: 0 2px; }
+</style>
+</head>
+<body>
+
+<!-- STATE 1: full conversation thread -->
+<div class="col">
+  <div class="label">1 · Conversation thread (started from footer or a highlight)</div>
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>● ●&nbsp;&nbsp;100%</span></div>
+    <div class="reader dim">
+      <div class="reader-head">
+        <div class="reader-title">Investing 101: From Stoc…</div>
+        <div class="reader-author">Michele Cagan</div>
+      </div>
+      <p>A bond will have a date of final maturity, which is the date at which the bond will return your principal.</p>
+      <p>Some types of bonds—known as callable bonds—can be redeemed by the issuer earlier than that maturity date.</p>
+    </div>
+
+    <div class="sheet sheet-tall">
+      <div class="handle"></div>
+      <div class="sheet-head">
+        <div class="sheet-title">Ask the book</div>
+        <div class="head-right">
+          <div class="toggle"><span>Whole book</span><div class="switch"><div class="knob"></div></div></div>
+          <div class="trash">🗑</div>
+        </div>
+      </div>
+
+      <div class="convo">
+        <div class="ctx-chip"><span class="txt">Asking about: “callable bonds can be redeemed…”</span><span class="x">✕</span></div>
+
+        <div class="turn user-row"><div class="user-bubble">according to the book, what is the best strategy for a beginner?</div></div>
+
+        <div class="turn">
+          <div class="answer">
+            <div class="eyebrow"><span class="spark">✦</span> Best beginner strategy</div>
+            <p>Start early and keep it simple: favor a long-term, growth-oriented mix (e.g. ~70% equities), invest regularly to harness compounding, hold some cash for emergencies, and avoid impulse moves until you gain experience.</p>
+            <div class="sources-label">Sources</div>
+            <div class="src-row">
+              <div class="src-chip"><div class="ch">Diversification</div><div class="pg">Page 222</div><div class="ex">Many financial advisors say, quite reasonably, that…</div></div>
+              <div class="src-chip"><div class="ch">Managing Your Funds</div><div class="pg">Page 121</div><div class="ex">Six fund investment strategies you can swear by…</div></div>
+            </div>
+            <div class="answer-actions"><span class="mini-act">🔖 Save</span></div>
+          </div>
+        </div>
+
+        <div class="turn user-row"><div class="user-bubble">make that simpler</div></div>
+
+        <div class="turn"><div class="thinking"><div class="dots"></div> Searching the book…</div></div>
+      </div>
+
+      <div class="input-row">
+        <div class="input-box">Ask a follow-up…</div>
+        <div class="send">➤</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STATE 2: collapsed peek after tapping a citation -->
+<div class="col">
+  <div class="label">2 · Tapped a citation → book scrolls, thread collapses (not destroyed)</div>
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span>● ●&nbsp;&nbsp;100%</span></div>
+    <div class="reader">
+      <div class="reader-head">
+        <div class="reader-title">Investing 101: From Stoc…</div>
+        <div class="reader-author">Michele Cagan</div>
+      </div>
+      <p style="text-indent:0"><b>Diversification</b></p>
+      <p>Many financial advisors say, quite reasonably, that <span class="highlight">a well-diversified portfolio across time and asset allocation</span> is the single most reliable way for a beginner to manage risk while still capturing long-term growth.</p>
+      <p>The idea is to avoid putting all of your money into one stock, one sector, or even one asset class — spreading it out cushions the blow when any single holding falls.</p>
+      <p>For most new investors, a simple low-cost index fund is the easiest way to get broad diversification without picking individual securities.</p>
+
+      <!-- collapsed thread peek -->
+      <div class="peek">
+        <div class="pk-txt">Conversation · <b>2 questions</b></div>
+        <div class="pk-up">Tap to reopen ▲</div>
+      </div>
+    </div>
+    <div class="footer">
+      <span>☰</span>
+      <span>🔖</span>
+      <span class="ask-pill">✦ Ask the book</span>
+      <span>🔍</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
