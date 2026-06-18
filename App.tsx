@@ -41,6 +41,7 @@ import type { BookSource } from './src/rag/bookAskTypes';
 import { createIndexApi } from './src/rag/indexApi';
 import { indexBook } from './src/rag/indexBook';
 import type { WholeBookAiState } from './src/rag/types';
+import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -206,6 +207,7 @@ type SavedNoteFilter = 'all' | InsightAction;
 
 type LibraryItem = {
   book: ReaderBook;
+  conversation: ConversationTurn[];
   id: string;
   importedAt: string;
   lastOpenedAt: string;
@@ -443,6 +445,7 @@ const defaultWholeBookAiState: WholeBookAiState = {
 
 const sampleLibraryItem: LibraryItem = {
   book: sampleBook,
+  conversation: [],
   id: 'sample:thinking-fast-and-slow',
   importedAt: 'sample',
   lastOpenedAt: 'sample',
@@ -1135,6 +1138,7 @@ function createLibraryItem(book: ReaderBook): LibraryItem {
 
   return {
     book: hydratedBook,
+    conversation: [],
     id: createLibraryItemId(hydratedBook, timestamp),
     importedAt: timestamp,
     lastOpenedAt: timestamp,
@@ -1159,6 +1163,7 @@ function createMigratedLibraryItem(
 
   return {
     book: hydratedBook,
+    conversation: [],
     id: hydratedBook.source === 'sample' ? sampleLibraryItem.id : createLibraryItemId(hydratedBook, importedAt),
     importedAt,
     lastOpenedAt: importedAt,
@@ -1439,7 +1444,7 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
   }
 
   if (Array.isArray(value.libraryItems)) {
-    const libraryItems = value.libraryItems.filter(isLibraryItem).map(hydrateLibraryItem);
+    const libraryItems = value.libraryItems.filter(isLibraryItem).map((item) => migrateLibraryItem(hydrateLibraryItem(item)));
 
     if (libraryItems.length === 0) {
       return null;
@@ -1453,7 +1458,7 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
     return {
       activeBookId,
       libraryItems,
-      schemaVersion: 4,
+      schemaVersion: LIBRARY_SCHEMA_VERSION,
     };
   }
 
@@ -1467,7 +1472,7 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
     return {
       activeBookId: migratedItem.id,
       libraryItems: [migratedItem],
-      schemaVersion: 4,
+      schemaVersion: LIBRARY_SCHEMA_VERSION,
     };
   }
 
@@ -2825,7 +2830,7 @@ function ReaderApp() {
       void writePersistedReaderState({
         activeBookId,
         libraryItems,
-        schemaVersion: 4,
+        schemaVersion: LIBRARY_SCHEMA_VERSION,
       }).catch((error) => {
         setImportError(`Could not save reader state. ${getErrorMessage(error)}`);
       });
