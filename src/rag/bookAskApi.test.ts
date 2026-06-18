@@ -1,4 +1,4 @@
-import { createBookAskApi } from './bookAskApi';
+import { createBookAskApi, requestBookAsk } from './bookAskApi';
 import type { BookAskRequest } from './bookAskTypes';
 
 function fakeClient() {
@@ -74,4 +74,31 @@ test('returns structured response', async () => {
   });
   expect(result.requestId).toBe('test-id');
   expect(result.supported).toBe(true);
+});
+
+test('sends history and selectedText in the body', async () => {
+  const calls: any[] = [];
+  const fakeFetch = async (_url: string, init: any) => {
+    calls.push(JSON.parse(init.body));
+    return {
+      ok: true,
+      json: async () => ({ requestId: 'r', eyebrow: 'E', body: 'B', supported: true, sources: [] }),
+    } as any;
+  };
+  await requestBookAsk(
+    {
+      apiBaseUrl: 'http://x',
+      cloudBookId: 'b',
+      question: 'q',
+      currentParagraphId: 'p',
+      currentReadingOrder: 3,
+      includeWholeBook: true,
+      accessToken: 't',
+      history: [{ role: 'user', content: 'earlier' }],
+      selectedText: 'sel',
+    },
+    fakeFetch,
+  );
+  expect(calls[0].history).toEqual([{ role: 'user', content: 'earlier' }]);
+  expect(calls[0].selectedText).toBe('sel');
 });

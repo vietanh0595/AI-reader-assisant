@@ -38,6 +38,8 @@ import { BookSources } from './src/components/BookSources';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import type { BookSource } from './src/rag/bookAskTypes';
+import { requestBookAsk } from './src/rag/bookAskApi';
+import { buildHistory } from './src/rag/buildHistory';
 import { createIndexApi } from './src/rag/indexApi';
 import { indexBook } from './src/rag/indexBook';
 import type { WholeBookAiState } from './src/rag/types';
@@ -1723,50 +1725,6 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
   };
 }
 
-async function requestBookAsk(
-  cloudBookId: string,
-  question: string,
-  currentParagraphId: string,
-  currentReadingOrder: number,
-  includeWholeBook: boolean,
-  accessToken: string,
-): Promise<{ eyebrow: string; body: string; sources: BookSource[] }> {
-  const url = `${apiBaseUrl}/library/books/${cloudBookId}/ask`;
-  let response: Response;
-
-  try {
-    response = await fetch(url, {
-      body: JSON.stringify({
-        question,
-        currentParagraphId,
-        currentReadingOrder,
-        includeWholeBook,
-      }),
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    });
-  } catch (error) {
-    throw new Error(`Could not reach ${url}. ${getErrorMessage(error)}`);
-  }
-
-  if (!response.ok) {
-    const errorDetail = await readResponseError(response);
-    throw new Error(errorDetail ?? `Book ask failed with status ${response.status}.`);
-  }
-
-  const data: unknown = await response.json();
-
-  if (!isRecord(data) || typeof data.eyebrow !== 'string' || typeof data.body !== 'string') {
-    throw new Error('Book ask response was not in the expected format.');
-  }
-
-  const sources = Array.isArray(data.sources) ? (data.sources as BookSource[]) : [];
-  return { body: (data.body as string).trim(), eyebrow: (data.eyebrow as string).trim(), sources };
-}
-
 async function requestOcr(payload: OcrRequestPayload): Promise<OcrExtractResponse> {
   const ocrUrl = `${apiBaseUrl}/ocr/extract`;
   const controller = new AbortController();
@@ -3247,14 +3205,17 @@ function ReaderApp() {
     setIsAssistLoading(true);
 
     try {
-      const result = await requestBookAsk(
+      const result = await requestBookAsk({
+        apiBaseUrl,
         cloudBookId,
-        questionText,
-        paragraphId,
-        readingOrder,
+        question: questionText,
+        currentParagraphId: paragraphId,
+        currentReadingOrder: readingOrder,
         includeWholeBook,
-        token,
-      );
+        accessToken: token,
+        history: buildHistory(activeLibraryItem.conversation),
+        selectedText: (selection ?? contextSelection)?.text ?? undefined,
+      });
 
       if (assistRequestId.current === requestId) {
         setInsight({ body: result.body, eyebrow: result.eyebrow });
