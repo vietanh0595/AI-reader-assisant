@@ -345,7 +345,7 @@ describe('AuthProvider', () => {
         'signed-in-access-token',
       );
     });
-    expect(mockMakeRedirectUri).toHaveBeenCalledWith({ scheme: 'aibookreader' });
+    expect(mockMakeRedirectUri).toHaveBeenCalledWith({ scheme: 'aibookreader', path: 'callback' });
     expect(mockUseAuthRequest).toHaveBeenCalledWith(
       {
         clientId: 'mobile-client',
