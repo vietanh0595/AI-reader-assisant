@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from backend.app.retrieval.models import EvidenceSet, FusedCandidate, RetrievalCandidate
+from backend.app.retrieval.repository import ContextBlock
 from backend.app.retrieval.service import RetrievalService
 
 USER_ID = uuid4()
@@ -129,10 +130,10 @@ def test_whole_book_includes_all_chunks():
     assert len(evidence.items) == 2
 
 
-def test_weak_evidence_abstains():
-    candidates = [make_candidate(0, 0, 10, similarity=0.12)]
-    repo = fake_repo(candidates, [])
-    service = RetrievalService(repo=repo, embedder=fake_embedder(), min_vector_similarity=0.35)
+def test_abstains_only_when_no_results():
+    # Gate fires only when BOTH vector_search and keyword_search return empty lists.
+    repo = fake_repo([], [])
+    service = RetrievalService(repo=repo, embedder=fake_embedder())
 
     evidence = service.retrieve(
         user_id=uuid4(),
@@ -142,7 +143,25 @@ def test_weak_evidence_abstains():
         current_reading_order=None,
     )
     assert evidence.supported is False
-    assert evidence.reason == "weak_retrieval"
+    assert evidence.reason == "no_results"
+
+
+def test_weak_evidence_is_returned_for_model_to_judge():
+    # Low-similarity vector results must NOT be filtered out — the downstream
+    # model decides whether the evidence is sufficient (loosened gate).
+    candidates = [make_candidate(0, 0, 10, similarity=0.12)]
+    repo = fake_repo(candidates, [])
+    service = RetrievalService(repo=repo, embedder=fake_embedder())
+
+    evidence = service.retrieve(
+        user_id=uuid4(),
+        book_id=uuid4(),
+        question="question",
+        include_whole_book=True,
+        current_reading_order=None,
+    )
+    assert evidence.supported is True
+    assert len(evidence.items) >= 1
 
 
 def test_strong_evidence_is_supported():
@@ -176,12 +195,10 @@ def test_evidence_capped_at_fused_candidates():
 
 
 def test_read_current_context_formats_window(make_service):
-    from backend.app.retrieval.repository import ContextBlock
     service, fake_repo_inst = make_service()
     fake_repo_inst.context_blocks = [
         ContextBlock("p-9", 9, "Ninth paragraph.", "Chapter 1"),
         ContextBlock("p-10", 10, "Tenth paragraph.", "Chapter 1"),
     ]
     text_out = service.read_current_context(user_id=USER_ID, book_id=BOOK_ID, current_reading_order=10)
-    assert "Ninth paragraph." in text_out
-    assert "Tenth paragraph." in text_out
+    assert text_out == "Ninth paragraph.\n\nTenth paragraph."
