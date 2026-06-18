@@ -3459,8 +3459,9 @@ function ReaderApp() {
                     onPress={() => setIsThreadOpen(false)}
                   />
                   <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={styles.keyboardContainer}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    pointerEvents="box-none"
+                    style={styles.threadKeyboardContainer}
                   >
                     <View style={styles.threadSheet}>
                       <ConversationThread
@@ -5849,6 +5850,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(23, 23, 21, 0.24)',
   },
   keyboardContainer: {
+    width: '100%',
+  },
+  threadKeyboardContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
     width: '100%',
   },
   threadSheet: {
