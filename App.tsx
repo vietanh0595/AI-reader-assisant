@@ -35,6 +35,7 @@ import {
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { BookSources } from './src/components/BookSources';
+import { ConversationThread } from './src/components/ConversationThread';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import type { BookSource } from './src/rag/bookAskTypes';
@@ -2367,6 +2368,7 @@ function ReaderApp() {
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
+  const [isThreadOpen, setIsThreadOpen] = useState(false);
   const [isThreadCollapsed, setIsThreadCollapsed] = useState(false);
   const [includeWholeBook, setIncludeWholeBook] = useState(false);
   const [askContextScope, setAskContextScope] = useState<AskContextScope>('selection');
@@ -2809,15 +2811,19 @@ function ReaderApp() {
 
     if (action === 'ask') {
       assistRequestId.current += 1;
-      setContextSelection(null);
-      setIsAskOpen(true);
-      setAskContextScope('selection');
       setLastAskRequest(null);
       setSelectedAction('ask');
       setInsight(null);
       setAssistError(null);
       setIsAssistLoading(false);
       setIsSavedNotesOpen(false);
+      if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+        setIsWholeBookAiOpen(true);
+        return;
+      }
+      setIsAskOpen(false);
+      setIsThreadCollapsed(false);
+      setIsThreadOpen(true);
       return;
     }
 
@@ -3181,6 +3187,20 @@ function ReaderApp() {
     setScrollTarget({ nonce: Date.now(), paragraphId });
   }
 
+  function openConversationThread() {
+    if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+      setIsWholeBookAiOpen(true);
+      return;
+    }
+    setIsAskOpen(false);
+    setIsThreadCollapsed(false);
+    setIsThreadOpen(true);
+  }
+
+  function clearConversation() {
+    updateActiveLibraryItem((item) => ({ ...item, conversation: [] }));
+  }
+
   async function runBookAsk(questionText: string) {
     const cloudBookId = activeLibraryItem.wholeBookAi.cloudBookId;
 
@@ -3339,40 +3359,6 @@ function ReaderApp() {
     }
   }
 
-  function submitQuestion() {
-    const trimmedQuestion = question.trim();
-
-    if (!trimmedQuestion) {
-      return;
-    }
-
-    setIsAskOpen(false);
-    setQuestion('');
-
-    if (askContextScope === 'book') {
-      void runBookAsk(trimmedQuestion);
-      return;
-    }
-
-    if (!selection && !contextSelection) {
-      return;
-    }
-
-    const contextScope = getAssistScopeForAsk(askContextScope);
-
-    setLastAskRequest({
-      contextScope,
-      question: trimmedQuestion,
-    });
-
-    if (selection) {
-      void runAssist('ask', trimmedQuestion, contextScope);
-      return;
-    }
-
-    void runContextAssist('ask', trimmedQuestion, contextScope);
-  }
-
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
@@ -3426,10 +3412,7 @@ function ReaderApp() {
                   isCopied={copiedSelectionId === selection.id}
                   isLoading={isAssistLoading}
                   isSaved={isSaved}
-                  onAskMore={() => {
-                    setAskContextScope('selection');
-                    setIsAskOpen(true);
-                  }}
+                  onAskMore={openConversationThread}
                   onChooseAction={chooseAction}
                   onExample={showExample}
                   onMakeSimpler={() => void runAssist('simpler')}
@@ -3443,6 +3426,7 @@ function ReaderApp() {
               <ReaderFooter
                 progress={readerProgress}
                 isSummarizing={isAssistLoading && selectedAction === 'summarize'}
+                onOpenAsk={openConversationThread}
                 onOpenSavedNotes={() => setIsSavedNotesOpen(true)}
                 onOpenSearch={openSearch}
                 onOpenTableOfContents={() => setIsTocOpen(true)}
@@ -3456,10 +3440,7 @@ function ReaderApp() {
                   insight={insight}
                   isLoading={isAssistLoading}
                   isSaved={isSaved}
-                  onAskMore={() => {
-                    setAskContextScope(contextSelection.contextScope === 'chapter' ? 'chapter' : 'visiblePage');
-                    setIsAskOpen(true);
-                  }}
+                  onAskMore={openConversationThread}
                   onExample={showExample}
                   onMakeSimpler={() => void runContextAssist('simpler')}
                   onSave={saveInsight}
@@ -3468,23 +3449,50 @@ function ReaderApp() {
                 />
               ) : null}
 
-              {isAskOpen && (selection || contextSelection) ? (
-                <AskSheet
-                  contextScope={askContextScope}
-                  includeWholeBook={includeWholeBook}
-                  isBookIndexReady={activeLibraryItem.wholeBookAi.status === 'ready'}
-                  question={question}
-                  selectedText={(selection ?? contextSelection)?.text ?? ''}
-                  onChangeContextScope={setAskContextScope}
-                  onChangeIncludeWholeBook={setIncludeWholeBook}
-                  onChangeQuestion={setQuestion}
-                  onClose={() => setIsAskOpen(false)}
-                  onSetupWholeBookAi={() => {
-                    setIsAskOpen(false);
-                    setIsWholeBookAiOpen(true);
-                  }}
-                  onSubmit={submitQuestion}
-                />
+              {isThreadOpen && !isThreadCollapsed ? (
+                <View style={styles.sheetLayer}>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={styles.sheetScrim}
+                    onPress={() => setIsThreadOpen(false)}
+                  />
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    style={styles.keyboardContainer}
+                  >
+                    <View style={styles.threadSheet}>
+                      <ConversationThread
+                        turns={activeLibraryItem.conversation}
+                        includeWholeBook={includeWholeBook}
+                        selectedText={(selection ?? contextSelection)?.text ?? undefined}
+                        isLoading={isAssistLoading && selectedAction === 'ask'}
+                        onSubmit={(text) => {
+                          setIsThreadCollapsed(false);
+                          void runBookAsk(text);
+                        }}
+                        onToggleWholeBook={() => setIncludeWholeBook((value) => !value)}
+                        onClear={clearConversation}
+                        onNavigateSource={navigateToSource}
+                        onClearSelection={clearSelection}
+                        onClose={() => setIsThreadOpen(false)}
+                      />
+                    </View>
+                  </KeyboardAvoidingView>
+                </View>
+              ) : null}
+
+              {isThreadOpen && isThreadCollapsed ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reopen conversation"
+                  onPress={() => setIsThreadCollapsed(false)}
+                  style={styles.peekBar}
+                >
+                  <Text style={styles.peekText}>
+                    Conversation · {countQuestions(activeLibraryItem.conversation)} questions
+                  </Text>
+                  <Text style={styles.peekReopen}>Tap to reopen ▲</Text>
+                </Pressable>
               ) : null}
 
               {isTocOpen ? (
@@ -4133,6 +4141,7 @@ function ScanProgressBanner({ label }: { label: string }) {
 function ReaderFooter({
   progress,
   isSummarizing,
+  onOpenAsk,
   onOpenSavedNotes,
   onOpenSearch,
   onOpenTableOfContents,
@@ -4141,6 +4150,7 @@ function ReaderFooter({
 }: {
   progress: ReaderProgress;
   isSummarizing: boolean;
+  onOpenAsk: () => void;
   onOpenSavedNotes: () => void;
   onOpenSearch: () => void;
   onOpenTableOfContents: () => void;
@@ -4191,6 +4201,15 @@ function ReaderFooter({
           ) : (
             <Sparkles color={colors.ink} size={21} strokeWidth={2} />
           )}
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Ask the book"
+          accessibilityRole="button"
+          onPress={onOpenAsk}
+          style={styles.askPill}
+        >
+          <Sparkles color={colors.white} size={15} strokeWidth={2.2} />
+          <Text style={styles.askPillText}>Ask the book</Text>
         </Pressable>
         <Pressable
           accessibilityLabel="Search"
@@ -4623,6 +4642,10 @@ function SearchSheet({
   );
 }
 
+function countQuestions(conversation: ConversationTurn[]) {
+  return conversation.filter((turn) => turn.role === 'user').length;
+}
+
 function getSearchScopeLabel(scope: SearchScope) {
   switch (scope) {
     case 'all':
@@ -4632,25 +4655,6 @@ function getSearchScopeLabel(scope: SearchScope) {
     default:
       return 'Book';
   }
-}
-
-function getAskContextScopeLabel(scope: AskContextScope) {
-  switch (scope) {
-    case 'book':
-      return 'Book';
-    case 'chapter':
-      return 'Chapter';
-    case 'visiblePage':
-      return 'Page';
-    default:
-      return 'Selection';
-  }
-}
-
-function getAssistScopeForAsk(scope: AskContextScope): AssistContextScope {
-  if (scope === 'selection') return 'paragraph';
-  if (scope === 'book') return 'chapter';
-  return scope;
 }
 
 function getSearchScopeEmptyText(scope: SearchScope) {
@@ -4918,125 +4922,6 @@ function InsightCard({
           </Text>
         </Pressable>
       </View>
-    </View>
-  );
-}
-
-function AskSheet({
-  contextScope,
-  includeWholeBook,
-  isBookIndexReady,
-  question,
-  selectedText,
-  onChangeContextScope,
-  onChangeIncludeWholeBook,
-  onChangeQuestion,
-  onClose,
-  onSetupWholeBookAi,
-  onSubmit,
-}: {
-  contextScope: AskContextScope;
-  includeWholeBook: boolean;
-  isBookIndexReady: boolean;
-  question: string;
-  selectedText: string;
-  onChangeContextScope: (scope: AskContextScope) => void;
-  onChangeIncludeWholeBook: (value: boolean) => void;
-  onChangeQuestion: (value: string) => void;
-  onClose: () => void;
-  onSetupWholeBookAi: () => void;
-  onSubmit: () => void;
-}) {
-  const canSubmit = question.trim().length > 0;
-  const scopeOptions: AskContextScope[] = ['selection', 'visiblePage', 'chapter', 'book'];
-
-  return (
-    <View style={styles.sheetLayer}>
-      <Pressable accessibilityRole="button" style={styles.sheetScrim} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardContainer}
-      >
-        <View style={styles.askSheet}>
-          <View style={styles.sheetHandle} />
-          <Text numberOfLines={2} style={styles.selectedPreview}>
-            {selectedText}
-          </Text>
-          <View style={styles.askScopeRow}>
-            {scopeOptions.map((option) => {
-              const isActive = contextScope === option;
-              const isBookNotReady = option === 'book' && !isBookIndexReady;
-
-              return (
-                <Pressable
-                  key={option}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isBookNotReady
-                      ? 'Set up Whole-Book AI'
-                      : getAskContextScopeLabel(option)
-                  }
-                  onPress={() => {
-                    if (isBookNotReady) {
-                      onSetupWholeBookAi();
-                    } else {
-                      onChangeContextScope(option);
-                    }
-                  }}
-                  style={[styles.askScopeButton, isActive && styles.askScopeButtonActive]}
-                >
-                  <Text style={[styles.askScopeText, isActive && styles.askScopeTextActive]}>
-                    {isBookNotReady ? '✦ Book AI' : getAskContextScopeLabel(option)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {contextScope === 'book' ? (
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityState={{ checked: includeWholeBook }}
-              onPress={() => onChangeIncludeWholeBook(!includeWholeBook)}
-              style={styles.wholeBookToggleRow}
-            >
-              <Text style={styles.wholeBookToggleLabel}>
-                {includeWholeBook ? 'Whole book' : 'Book so far'}
-              </Text>
-              <View style={[styles.wholeBookToggle, includeWholeBook && styles.wholeBookToggleOn]}>
-                <View style={[styles.wholeBookToggleThumb, includeWholeBook && styles.wholeBookToggleThumbOn]} />
-              </View>
-            </Pressable>
-          ) : null}
-          <View style={styles.questionRow}>
-            <TextInput
-              multiline
-              onChangeText={onChangeQuestion}
-              placeholder="Ask a follow-up..."
-              placeholderTextColor="#8c8a84"
-              style={styles.questionInput}
-              value={question}
-            />
-            <Pressable
-              accessibilityRole="button"
-              disabled={!canSubmit}
-              onPress={onSubmit}
-              style={[styles.sendButton, !canSubmit && styles.sendButtonDisabled]}
-            >
-              <Send color={canSubmit ? colors.white : '#8c8a84'} size={18} strokeWidth={2.3} />
-            </Pressable>
-          </View>
-          <View style={styles.sheetActions}>
-            <Pressable accessibilityRole="button" onPress={onSubmit} style={styles.sheetButton}>
-              <MessageCircle color={colors.ink} size={17} strokeWidth={2} />
-              <Text style={styles.sheetButtonText}>Ask more</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" onPress={onClose} style={styles.sheetButton}>
-              <Bookmark color={colors.ink} size={17} strokeWidth={2} />
-              <Text style={styles.sheetButtonText}>Save</Text>
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -5610,6 +5495,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 46,
   },
+  askPill: {
+    alignItems: 'center',
+    backgroundColor: colors.sageDark,
+    borderRadius: 20,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  askPillText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   savedBadge: {
     alignItems: 'center',
     backgroundColor: colors.sageDark,
@@ -5949,6 +5848,38 @@ const styles = StyleSheet.create({
   },
   keyboardContainer: {
     width: '100%',
+  },
+  threadSheet: {
+    height: 560,
+    width: '100%',
+  },
+  peekBar: {
+    alignItems: 'center',
+    backgroundColor: colors.paper,
+    borderColor: colors.hairline,
+    borderRadius: 16,
+    borderWidth: 1,
+    bottom: 74,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    left: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    position: 'absolute',
+    right: 12,
+    shadowColor: colors.shadow,
+    shadowOffset: { height: 8, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 22,
+  },
+  peekText: {
+    color: '#3f3b34',
+    fontSize: 13,
+  },
+  peekReopen: {
+    color: colors.sageDark,
+    fontSize: 13,
+    fontWeight: '800',
   },
   askSheet: {
     backgroundColor: colors.card,
