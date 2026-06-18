@@ -94,28 +94,6 @@ def _fake_embedder(dimensions: int = 1536):
     return embedder
 
 
-def _fake_answerer(body: str = "Central banks set rates."):
-    answerer = MagicMock()
-    answerer.answer.return_value = BookAnswer(
-        request_id=str(uuid.uuid4()),
-        eyebrow="From the book",
-        body=body,
-        supported=True,
-        sources=[
-            BookSource(
-                id="src-0",
-                paragraph_id="p1",
-                chapter_title="Chapter 1",
-                excerpt="Central banks set interest rates.",
-                page_index=None,
-                page_label=None,
-                source_ref={"source": "epub"},
-            )
-        ],
-    )
-    return answerer
-
-
 def _fake_agent(body: str = "Central banks set rates."):
     """Returns a BookAgent-like mock whose .answer() returns a canned BookAnswer."""
     agent = MagicMock()
