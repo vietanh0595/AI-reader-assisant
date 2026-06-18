@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
 
@@ -7,6 +8,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from .models import RetrievalCandidate
+
+
+@dataclass(frozen=True)
+class ContextBlock:
+    paragraph_id: str
+    reading_order: int
+    text: str
+    chapter_title: str | None
 
 
 class RetrievalRepository:
@@ -226,4 +235,31 @@ class RetrievalRepository:
                 source_refs=row[10] or [],
             )
             for row in rows
+        ]
+
+    def read_context_window(
+        self,
+        user_id: UUID,
+        book_id: UUID,
+        center_reading_order: int,
+        radius: int = 2,
+    ) -> list[ContextBlock]:
+        lo = max(0, center_reading_order - radius)
+        hi = center_reading_order + radius
+        sql = text("""
+            SELECT bb.paragraph_id, bb.reading_order, bb.text, bb.chapter_title
+            FROM book_blocks bb
+            JOIN index_versions iv ON iv.id = bb.index_version_id
+            JOIN books b ON b.active_index_version_id = iv.id
+            WHERE b.id = :book_id
+              AND b.user_id = :user_id
+              AND bb.reading_order BETWEEN :lo AND :hi
+            ORDER BY bb.reading_order
+        """)
+        params = {"book_id": str(book_id), "user_id": str(user_id), "lo": lo, "hi": hi}
+        with self._factory() as session:
+            rows = session.execute(sql, params).fetchall()
+        return [
+            ContextBlock(paragraph_id=r[0], reading_order=r[1], text=r[2], chapter_title=r[3])
+            for r in rows
         ]

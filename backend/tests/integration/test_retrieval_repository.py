@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.indexing.models import (
     Book,
+    BookBlock,
     IndexVersion,
     IndexVersionStatus,
     RagChunk,
@@ -208,3 +209,75 @@ def test_keyword_search_scope_excludes_other_version(sf, committed_user):
             bk = session.get(Book, book_id)
             if bk:
                 session.delete(bk)
+
+
+@pytest.fixture
+def seeded_book_with_blocks(sf, committed_user):
+    """Creates a book with 21 BookBlock rows (reading_order 0..20) and an active READY index version."""
+    book_id = None
+
+    with sf() as session:
+        with session.begin():
+            book = Book(
+                user_id=committed_user,
+                client_book_id="context-window-test-book",
+                title="Context Window Book",
+                author="Author",
+                source_type="epub",
+            )
+            session.add(book)
+            session.flush()
+
+            version = IndexVersion(
+                book_id=book.id,
+                content_hash="a" * 64,
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=1536,
+                chunking_version="v1",
+                expected_block_count=21,
+                status=IndexVersionStatus.READY,
+            )
+            session.add(version)
+            session.flush()
+
+            book.active_index_version_id = version.id
+
+            for i in range(21):
+                block = BookBlock(
+                    index_version_id=version.id,
+                    paragraph_id=f"para-{i}",
+                    reading_order=i,
+                    block_kind="paragraph",
+                    text=f"para {i}",
+                    text_hash="b" * 64,
+                    chapter_title="Chapter 1",
+                    source_ref={},
+                )
+                session.add(block)
+
+            book_id = book.id
+
+    yield (RetrievalRepository(sf), committed_user, book_id)
+
+    with sf() as session:
+        with session.begin():
+            bk = session.get(Book, book_id)
+            if bk:
+                session.delete(bk)
+
+
+def test_read_context_window_returns_blocks_around_position(seeded_book_with_blocks):
+    repo, user_id, book_id = seeded_book_with_blocks  # blocks at reading_order 0..20
+    rows = repo.read_context_window(
+        user_id=user_id, book_id=book_id, center_reading_order=10, radius=2,
+    )
+    orders = [r.reading_order for r in rows]
+    assert orders == [8, 9, 10, 11, 12]
+
+
+def test_read_context_window_clamps_at_start(seeded_book_with_blocks):
+    repo, user_id, book_id = seeded_book_with_blocks
+    rows = repo.read_context_window(
+        user_id=user_id, book_id=book_id, center_reading_order=1, radius=3,
+    )
+    assert [r.reading_order for r in rows] == [0, 1, 2, 3, 4]
