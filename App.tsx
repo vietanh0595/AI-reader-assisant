@@ -5858,7 +5858,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   threadSheet: {
-    height: 560,
+    flex: 1,
     width: '100%',
   },
   peekBar: {
