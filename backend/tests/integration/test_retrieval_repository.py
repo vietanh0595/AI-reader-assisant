@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -281,3 +281,20 @@ def test_read_context_window_clamps_at_start(seeded_book_with_blocks):
         user_id=user_id, book_id=book_id, center_reading_order=1, radius=3,
     )
     assert [r.reading_order for r in rows] == [0, 1, 2, 3, 4]
+
+
+def test_read_context_window_clamps_at_end(seeded_book_with_blocks):
+    repo, user_id, book_id = seeded_book_with_blocks
+    rows = repo.read_context_window(
+        user_id=user_id, book_id=book_id, center_reading_order=19, radius=3,
+    )
+    assert [r.reading_order for r in rows] == [16, 17, 18, 19, 20]
+
+
+def test_read_context_window_excludes_other_users_book(seeded_book_with_blocks):
+    repo, _owner_user_id, book_id = seeded_book_with_blocks
+    other_user_id = uuid4()
+    rows = repo.read_context_window(
+        user_id=other_user_id, book_id=book_id, center_reading_order=10, radius=2,
+    )
+    assert rows == []
