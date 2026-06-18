@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from ..auth.dependencies import get_current_user
 from ..db.models import User
 from ..indexing.models import Book, IndexVersionStatus
-from ..retrieval.answerer import BookAnswerer
 from ..retrieval.models import BookAnswer
 from ..retrieval.repository import RetrievalRepository
 from ..retrieval.schemas import BookAskRequest, BookAskResponse, BookSourceResponse
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/library/books", tags=["book-ask"])
 
 def _build_retrieval_service(request: Request) -> RetrievalService:
     settings = request.app.state.settings
-    from sqlalchemy.orm import sessionmaker as sm
     factory = request.app.state.session_factory
     from openai import OpenAI
     from ..indexing.embeddings import OpenAIEmbeddingProvider
@@ -44,13 +42,16 @@ def _build_retrieval_service(request: Request) -> RetrievalService:
     )
 
 
-def _build_answerer(request: Request) -> BookAnswerer:
-    settings = request.app.state.settings
+def _build_agent(request: Request):
     from openai import OpenAI
+    from ..retrieval.agent import BookAgent
+    settings = request.app.state.settings
     client = OpenAI(api_key=settings.openai_api_key)
-    return BookAnswerer(
+    retrieval = _build_retrieval_service(request)
+    return BookAgent(
         client=client,
         model=settings.openai_model,
+        retrieval=retrieval,
         reasoning_effort=settings.openai_reasoning_effort,
     )
 
@@ -87,28 +88,16 @@ def ask_book(
             detail={"status": current_status, "message": "Index is not ready."},
         )
 
-    retrieval_service = _build_retrieval_service(request)
-    evidence = retrieval_service.retrieve(
+    agent = _build_agent(request)
+    answer = agent.answer(
         user_id=user.id,
         book_id=book_id,
         question=ask_request.question,
-        include_whole_book=ask_request.include_whole_book,
+        history=[t.model_dump() for t in ask_request.history],
+        selected_text=ask_request.selected_text,
         current_reading_order=ask_request.current_reading_order,
+        include_whole_book=ask_request.include_whole_book,
     )
-
-    if not evidence.supported:
-        from ..retrieval.answerer import _INSUFFICIENT_EVIDENCE_BODY, _INSUFFICIENT_EVIDENCE_EYEBROW
-        import uuid as _uuid
-        return BookAskResponse(
-            requestId=str(_uuid.uuid4()),
-            eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
-            body=_INSUFFICIENT_EVIDENCE_BODY,
-            supported=False,
-            sources=[],
-        )
-
-    answerer = _build_answerer(request)
-    answer = answerer.answer(question=ask_request.question, evidence=evidence)
 
     return BookAskResponse(
         requestId=answer.request_id,

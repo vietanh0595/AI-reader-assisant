@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.indexing.models import Book, IndexVersion, IndexVersionStatus, RagChunk
-from backend.app.retrieval.answerer import ModelBookAnswer
 from backend.app.retrieval.schemas import BookAskRequest
 
 
@@ -157,17 +157,10 @@ def ready_book_fixture(migrated_database, committed_user):
 def test_book_ask_returns_answer(auth_client, ready_book_fixture):
     book_id = ready_book_fixture["book_id"]
 
-    mock_evidence = MagicMock()
-    mock_evidence.supported = True
-    mock_service = MagicMock()
-    mock_service.retrieve.return_value = mock_evidence
+    mock_agent = MagicMock()
+    mock_agent.answer.return_value = _fake_answerer(supported=True)
 
-    mock_answerer = MagicMock()
-    mock_answerer.answer.return_value = _fake_answerer(supported=True)
-
-    with patch("backend.app.routers.book_ask._build_retrieval_service", return_value=mock_service), \
-         patch("backend.app.routers.book_ask._build_answerer", return_value=mock_answerer):
-
+    with patch("backend.app.routers.book_ask._build_agent", return_value=mock_agent):
         response = auth_client.post(
             f"/library/books/{book_id}/ask",
             json=ask_request(),
@@ -223,3 +216,62 @@ def test_book_ask_rejects_unknown_book(auth_client):
         json=ask_request(),
     )
     assert response.status_code == 404
+
+
+@pytest.fixture
+def ask_client_ready_book(app_settings, migrated_database, committed_user):
+    """Yields (client, book_id, auth_headers) with a READY indexed book."""
+    from backend.app.auth.dependencies import get_current_user
+    from backend.app.db.models import User
+    from backend.app.main import create_app
+
+    factory = sessionmaker(bind=migrated_database, expire_on_commit=False)
+    book_id, _ = _create_ready_book(factory, committed_user)
+
+    dedicated_app = create_app(app_settings)
+    fake_user = User()
+    fake_user.id = committed_user
+    dedicated_app.dependency_overrides[get_current_user] = lambda: fake_user
+
+    with TestClient(dedicated_app, raise_server_exceptions=False) as client:
+        yield client, book_id, {}
+
+    _delete_book(factory, book_id)
+
+
+def test_ask_uses_book_agent(monkeypatch, ask_client_ready_book):
+    client, book_id, auth_headers = ask_client_ready_book
+    captured = {}
+
+    from backend.app.retrieval.models import BookAnswer, BookSource
+
+    def fake_answer(self, **kwargs):
+        captured.update(kwargs)
+        return BookAnswer(
+            request_id="r1", eyebrow="E", body="B", supported=True,
+            sources=[BookSource(
+                id="s0-0", paragraph_id="p-1", chapter_title="C",
+                excerpt="ex", page_index=0, page_label=None,
+                source_ref={"source": "epub"},
+            )],
+        )
+
+    monkeypatch.setattr("backend.app.retrieval.agent.BookAgent.answer", fake_answer)
+
+    resp = client.post(
+        f"/library/books/{book_id}/ask",
+        headers=auth_headers,
+        json={
+            "question": "best strategy?",
+            "currentParagraphId": "p-1",
+            "currentReadingOrder": 5,
+            "includeWholeBook": True,
+            "history": [{"role": "user", "content": "earlier"}],
+            "selectedText": "passage",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["body"] == "B"
+    assert captured["history"] == [{"role": "user", "content": "earlier"}]
+    assert captured["selected_text"] == "passage"
+    assert captured["include_whole_book"] is True
