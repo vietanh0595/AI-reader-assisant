@@ -27,9 +27,10 @@ function isPersistedAuthSession(value: unknown): value is PersistedAuthSession {
     isOptionalString(candidate.refreshToken) &&
     isOptionalString(candidate.scope) &&
     isOptionalString(candidate.state) &&
+    // token_type is case-insensitive per RFC 6749; Auth0 returns "Bearer".
     (candidate.tokenType === undefined ||
-      candidate.tokenType === 'bearer' ||
-      candidate.tokenType === 'mac')
+      (typeof candidate.tokenType === 'string' &&
+        ['bearer', 'mac'].includes(candidate.tokenType.toLowerCase())))
   );
 }
 

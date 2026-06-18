@@ -2042,6 +2042,13 @@ function createReaderHtml(readerParagraphs: Paragraph[]) {
         -webkit-touch-callout: none;
         -webkit-user-select: text;
         user-select: text;
+        /* Let WebKit skip layout/paint for off-screen blocks. Keeps the full
+           DOM intact (selection, getElementById scroll targets still work) but
+           prevents the content process from being killed under memory pressure
+           on long books. contain-intrinsic-size gives off-screen blocks an
+           estimated height so the scrollbar and scroll position stay stable. */
+        content-visibility: auto;
+        contain-intrinsic-size: auto 60px;
       }
 
       .reader-page-marker {
@@ -3087,6 +3094,7 @@ function ReaderApp() {
 
     setSelectedAction(action);
     setInsight(null);
+    setBookAskSources([]);
     setAssistError(null);
     setIsAssistLoading(true);
 
@@ -3200,6 +3208,12 @@ function ReaderApp() {
     notesCopyFeedbackTimer.current = setTimeout(() => {
       setNotesCopyFeedback(false);
     }, 1500);
+  }
+
+  function navigateToSource(paragraphId: string) {
+    clearSelection();
+    updateReadingLocation(paragraphId);
+    setScrollTarget({ nonce: Date.now(), paragraphId });
   }
 
   async function runBookAsk(questionText: string) {
@@ -3445,6 +3459,8 @@ function ReaderApp() {
                   onMakeSimpler={() => void runAssist('simpler')}
                   onSave={saveInsight}
                   selectionKind={selection.selectionKind}
+                  sources={bookAskSources}
+                  onNavigateSource={navigateToSource}
                 />
               ) : null}
 
@@ -3471,17 +3487,8 @@ function ReaderApp() {
                   onExample={showExample}
                   onMakeSimpler={() => void runContextAssist('simpler')}
                   onSave={saveInsight}
-                />
-              ) : null}
-
-              {bookAskSources.length > 0 ? (
-                <BookSourcesPanel
                   sources={bookAskSources}
-                  onNavigate={(paragraphId) => {
-                    clearSelection();
-                    updateReadingLocation(paragraphId);
-                    setScrollTarget({ nonce: Date.now(), paragraphId });
-                  }}
+                  onNavigateSource={navigateToSource}
                 />
               ) : null}
 
@@ -3853,6 +3860,11 @@ function ReaderSurface({
         }
       }}
       onMessage={handleMessage}
+      onContentProcessDidTerminate={() => {
+        // iOS killed the WebView content process (memory pressure). Reload once
+        // so the reader recovers instead of showing a blank/flickering view.
+        webViewRef.current?.reload();
+      }}
       originWhitelist={['*']}
       scrollEnabled
       source={{ html }}
@@ -4689,6 +4701,8 @@ function SelectionPanel({
   onMakeSimpler,
   onSave,
   selectionKind,
+  sources,
+  onNavigateSource,
 }: {
   activeAction: InsightAction | null;
   errorMessage: string | null;
@@ -4702,6 +4716,8 @@ function SelectionPanel({
   onMakeSimpler: () => void;
   onSave: () => void;
   selectionKind: SelectionKind;
+  sources?: BookSource[];
+  onNavigateSource?: (paragraphId: string) => void;
 }) {
   return (
     <Pressable accessible={false} onPress={stopPressPropagation} style={styles.selectionPanel}>
@@ -4724,6 +4740,8 @@ function SelectionPanel({
           onExample={onExample}
           onMakeSimpler={onMakeSimpler}
           onSave={onSave}
+          sources={sources}
+          onNavigateSource={onNavigateSource}
         />
       ) : null}
     </Pressable>
@@ -4739,6 +4757,8 @@ function ContextInsightPanel({
   onExample,
   onMakeSimpler,
   onSave,
+  sources,
+  onNavigateSource,
 }: {
   errorMessage: string | null;
   insight: Insight | null;
@@ -4748,6 +4768,8 @@ function ContextInsightPanel({
   onExample: () => void;
   onMakeSimpler: () => void;
   onSave: () => void;
+  sources?: BookSource[];
+  onNavigateSource?: (paragraphId: string) => void;
 }) {
   return (
     <Pressable accessible={false} onPress={stopPressPropagation} style={styles.selectionPanel}>
@@ -4763,22 +4785,10 @@ function ContextInsightPanel({
           onExample={onExample}
           onMakeSimpler={onMakeSimpler}
           onSave={onSave}
+          sources={sources}
+          onNavigateSource={onNavigateSource}
         />
       ) : null}
-    </Pressable>
-  );
-}
-
-function BookSourcesPanel({
-  sources,
-  onNavigate,
-}: {
-  sources: BookSource[];
-  onNavigate: (paragraphId: string) => void;
-}) {
-  return (
-    <Pressable accessible={false} onPress={stopPressPropagation} style={styles.bookSourcesPanel}>
-      <BookSources sources={sources} onNavigate={onNavigate} />
     </Pressable>
   );
 }
@@ -4857,6 +4867,8 @@ function InsightCard({
   onExample,
   onMakeSimpler,
   onSave,
+  sources = [],
+  onNavigateSource,
 }: {
   insight: Insight;
   isSaved: boolean;
@@ -4864,6 +4876,8 @@ function InsightCard({
   onExample: () => void;
   onMakeSimpler: () => void;
   onSave: () => void;
+  sources?: BookSource[];
+  onNavigateSource?: (paragraphId: string) => void;
 }) {
   return (
     <View style={styles.insightCard}>
@@ -4871,7 +4885,20 @@ function InsightCard({
         <Sparkles color={colors.clay} size={17} strokeWidth={2} />
         <Text style={styles.insightEyebrow}>{insight.eyebrow}</Text>
       </View>
-      <Text style={styles.insightBody}>{insight.body}</Text>
+      <ScrollView
+        style={styles.insightBodyScroll}
+        contentContainerStyle={styles.insightBodyScrollContent}
+        showsVerticalScrollIndicator
+        nestedScrollEnabled
+      >
+        <Text style={styles.insightBody}>{insight.body}</Text>
+
+        {sources.length > 0 && onNavigateSource ? (
+          <View style={styles.insightSources}>
+            <BookSources sources={sources} onNavigate={onNavigateSource} />
+          </View>
+        ) : null}
+      </ScrollView>
 
       <View style={[styles.insightActions, styles.insightActionsWrapped]}>
         <Pressable
@@ -5426,13 +5453,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
   },
-  bookSourcesPanel: {
-    backgroundColor: 'transparent',
-    bottom: 56,
-    left: 16,
-    position: 'absolute',
-    right: 16,
-  },
   actionMenu: {
     backgroundColor: colors.card,
     borderColor: colors.hairline,
@@ -5501,12 +5521,24 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0,
   },
+  insightBodyScroll: {
+    maxHeight: 260,
+  },
+  insightBodyScrollContent: {
+    paddingRight: 2,
+  },
   insightBody: {
     color: colors.ink,
     fontSize: 13,
     fontWeight: '500',
     letterSpacing: 0,
     lineHeight: 18,
+  },
+  insightSources: {
+    borderTopColor: colors.warmNoteBorder,
+    borderTopWidth: 1,
+    marginTop: 12,
+    paddingTop: 12,
   },
   errorText: {
     color: colors.error,
