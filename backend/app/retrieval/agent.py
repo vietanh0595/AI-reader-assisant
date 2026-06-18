@@ -126,7 +126,7 @@ class BookAgent:
                 query = args.get("query", "")
                 evidence: EvidenceSet = self._retrieval.retrieve(
                     user_id=user_id, book_id=book_id, question=query,
-                    max_reading_order=max_reading_order,
+                    include_whole_book=(max_reading_order is None),
                     current_reading_order=current_reading_order)
                 lines = []
                 for i, item in enumerate(evidence.items):

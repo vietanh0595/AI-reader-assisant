@@ -84,7 +84,7 @@ def test_agent_runs_tool_then_answers_with_validated_citation():
     assert answer.supported is True
     assert answer.body == "Start early."
     assert [s.id for s in answer.sources] == ["s0-0"]
-    assert retrieval.retrieve_calls[0]["max_reading_order"] is None
+    assert retrieval.retrieve_calls[0]["include_whole_book"] is True
 
 
 def test_agent_applies_spoiler_cap_when_book_so_far():
@@ -100,7 +100,8 @@ def test_agent_applies_spoiler_cap_when_book_so_far():
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=retrieval)
     agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
                  selected_text=None, current_reading_order=42, include_whole_book=False)
-    assert retrieval.retrieve_calls[0]["max_reading_order"] == 42
+    assert retrieval.retrieve_calls[0]["include_whole_book"] is False
+    assert retrieval.retrieve_calls[0]["current_reading_order"] == 42
 
 
 def test_agent_drops_invalid_citation_ids():
