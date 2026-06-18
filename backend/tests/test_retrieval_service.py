@@ -10,6 +10,47 @@ import pytest
 from backend.app.retrieval.models import EvidenceSet, FusedCandidate, RetrievalCandidate
 from backend.app.retrieval.service import RetrievalService
 
+USER_ID = uuid4()
+BOOK_ID = uuid4()
+
+
+class FakeRepo:
+    """Fake repository that supports both retrieval and context-window operations."""
+
+    def __init__(
+        self,
+        vector_results: list[RetrievalCandidate] | None = None,
+        keyword_results: list[RetrievalCandidate] | None = None,
+    ) -> None:
+        self._vector_results = vector_results or []
+        self._keyword_results = keyword_results or []
+        self.context_blocks: list = []
+
+    def vector_search(self, **kwargs) -> list[RetrievalCandidate]:
+        return self._vector_results
+
+    def keyword_search(self, **kwargs) -> list[RetrievalCandidate]:
+        return self._keyword_results
+
+    def get_neighbors(self, **kwargs) -> list[RetrievalCandidate]:
+        return []
+
+    def read_context_window(self, **kwargs) -> list:
+        return self.context_blocks
+
+
+@pytest.fixture
+def make_service():
+    def _factory(
+        vector_results: list[RetrievalCandidate] | None = None,
+        keyword_results: list[RetrievalCandidate] | None = None,
+    ):
+        repo = FakeRepo(vector_results=vector_results, keyword_results=keyword_results)
+        service = RetrievalService(repo=repo, embedder=fake_embedder())
+        return service, repo
+
+    return _factory
+
 
 def make_candidate(
     chunk_order: int,
@@ -132,3 +173,15 @@ def test_evidence_capped_at_fused_candidates():
         current_reading_order=None,
     )
     assert len(evidence.items) <= 5
+
+
+def test_read_current_context_formats_window(make_service):
+    from backend.app.retrieval.repository import ContextBlock
+    service, fake_repo_inst = make_service()
+    fake_repo_inst.context_blocks = [
+        ContextBlock("p-9", 9, "Ninth paragraph.", "Chapter 1"),
+        ContextBlock("p-10", 10, "Tenth paragraph.", "Chapter 1"),
+    ]
+    text_out = service.read_current_context(user_id=USER_ID, book_id=BOOK_ID, current_reading_order=10)
+    assert "Ninth paragraph." in text_out
+    assert "Tenth paragraph." in text_out

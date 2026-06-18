@@ -121,3 +121,20 @@ class RetrievalService:
             )
 
         return EvidenceSet(items=items, supported=True)
+
+    def read_current_context(
+        self,
+        user_id: UUID,
+        book_id: UUID,
+        current_reading_order: int,
+        radius: int = 2,
+    ) -> str:
+        blocks = self._repo.read_context_window(
+            user_id=user_id,
+            book_id=book_id,
+            center_reading_order=current_reading_order,
+            radius=radius,
+        )
+        if not blocks:
+            return "No surrounding text is available at the current position."
+        return "\n\n".join(b.text for b in blocks)
