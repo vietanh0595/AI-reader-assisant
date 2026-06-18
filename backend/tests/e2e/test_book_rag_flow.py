@@ -116,6 +116,29 @@ def _fake_answerer(body: str = "Central banks set rates."):
     return answerer
 
 
+def _fake_agent(body: str = "Central banks set rates."):
+    """Returns a BookAgent-like mock whose .answer() returns a canned BookAnswer."""
+    agent = MagicMock()
+    agent.answer.return_value = BookAnswer(
+        request_id=str(uuid.uuid4()),
+        eyebrow="From the book",
+        body=body,
+        supported=True,
+        sources=[
+            BookSource(
+                id="src-0",
+                paragraph_id="p1",
+                chapter_title="Chapter 1",
+                excerpt="Central banks set interest rates.",
+                page_index=None,
+                page_label=None,
+                source_ref={"source": "epub"},
+            )
+        ],
+    )
+    return agent
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -245,18 +268,15 @@ def test_full_indexing_pipeline(auth_client, book_fixture, migrated_database, ap
         assert version is not None
         assert version.status == IndexVersionStatus.READY
 
-    # Step 5: ask - mock both retrieval service and answerer
-    mock_evidence = MagicMock()
-    mock_evidence.supported = True
-    mock_service = MagicMock()
-    mock_service.retrieve.return_value = mock_evidence
+    # Step 5: ask (first turn) — mock the agentic answerer
+    first_question = "How do central banks control inflation?"
+    fake_agent_first = _fake_agent("Central banks set rates to control inflation.")
 
-    with patch("backend.app.routers.book_ask._build_retrieval_service", return_value=mock_service), \
-         patch("backend.app.routers.book_ask._build_answerer", return_value=_fake_answerer()):
+    with patch("backend.app.routers.book_ask._build_agent", return_value=fake_agent_first):
         ask_resp = auth_client.post(
             f"/library/books/{cloud_book_id}/ask",
             json={
-                "question": "How do central banks control inflation?",
+                "question": first_question,
                 "currentParagraphId": "p1",
                 "currentReadingOrder": 1,
                 "includeWholeBook": True,
@@ -264,9 +284,72 @@ def test_full_indexing_pipeline(auth_client, book_fixture, migrated_database, ap
         )
 
     assert ask_resp.status_code == 200
-    answer = ask_resp.json()
-    assert answer["supported"] is True
-    assert len(answer["body"]) > 0
+    first_answer = ask_resp.json()
+    assert first_answer["supported"] is True
+    first_body = first_answer["body"]
+    assert len(first_body) > 0
+
+    # Step 6: multi-turn ask — second question carries conversation history
+    history_payload = [
+        {"role": "user", "content": first_question},
+        {"role": "assistant", "content": first_body},
+    ]
+    second_question = "What happens when rates are raised too fast?"
+    captured_kwargs: dict = {}
+
+    def _capturing_answer(**kwargs):
+        captured_kwargs.update(kwargs)
+        return BookAnswer(
+            request_id=str(uuid.uuid4()),
+            eyebrow="From the book",
+            body="Rapid rate hikes can cause a recession.",
+            supported=True,
+            sources=[
+                BookSource(
+                    id="src-1",
+                    paragraph_id="p2",
+                    chapter_title="Chapter 1",
+                    excerpt="Higher interest rates slow economic growth.",
+                    page_index=None,
+                    page_label=None,
+                    source_ref={"source": "epub"},
+                )
+            ],
+        )
+
+    fake_agent_second = MagicMock()
+    fake_agent_second.answer.side_effect = _capturing_answer
+
+    with patch("backend.app.routers.book_ask._build_agent", return_value=fake_agent_second):
+        ask_resp2 = auth_client.post(
+            f"/library/books/{cloud_book_id}/ask",
+            json={
+                "question": second_question,
+                "currentParagraphId": "p2",
+                "currentReadingOrder": 2,
+                "includeWholeBook": True,
+                "history": history_payload,
+            },
+        )
+
+    assert ask_resp2.status_code == 200
+    second_answer = ask_resp2.json()
+    assert len(second_answer["body"]) > 0
+
+    # Assert sources have non-empty string IDs
+    for source in second_answer["sources"]:
+        assert isinstance(source["id"], str) and len(source["id"]) > 0
+
+    # Assert the agent received the full conversation history
+    assert "history" in captured_kwargs, "BookAgent.answer was not called with 'history'"
+    forwarded_history = captured_kwargs["history"]
+    assert len(forwarded_history) == 2, (
+        f"Expected 2 history turns to be forwarded, got {len(forwarded_history)}"
+    )
+    assert forwarded_history[0]["role"] == "user"
+    assert forwarded_history[0]["content"] == first_question
+    assert forwarded_history[1]["role"] == "assistant"
+    assert forwarded_history[1]["content"] == first_body
 
 
 def test_resume_reuses_existing_version(auth_client, book_fixture):
