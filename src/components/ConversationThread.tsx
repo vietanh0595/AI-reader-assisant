@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -7,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ConversationTurn } from '../library/conversation';
 import { BookSources } from './BookSources';
 
@@ -36,6 +39,25 @@ export function ConversationThread({
   onClose,
 }: ConversationThreadProps) {
   const [draft, setDraft] = useState('');
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // The sheet sits inside the app SafeAreaView, whose bottom inset already lifts
+  // it above the home indicator; subtract it so we don't double-count.
+  const keyboardPadding = keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0;
 
   const handleSubmit = () => {
     if (isLoading) {
@@ -50,7 +72,7 @@ export function ConversationThread({
   };
 
   return (
-    <View style={styles.sheet}>
+    <View style={[styles.sheet, { paddingBottom: keyboardPadding }]}>
       <View style={styles.handle} />
       <View style={styles.head}>
         <Text style={styles.title}>Ask the book</Text>

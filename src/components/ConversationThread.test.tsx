@@ -1,6 +1,15 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConversationThread } from './ConversationThread';
+
+const metrics = {
+  frame: { x: 0, y: 0, width: 320, height: 640 },
+  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+};
+
+const renderThread = (ui: React.ReactElement) =>
+  render(<SafeAreaProvider initialMetrics={metrics}>{ui}</SafeAreaProvider>);
 
 const baseProps = {
   turns: [
@@ -15,7 +24,7 @@ const baseProps = {
 };
 
 test('renders user and assistant turns with citation chips', async () => {
-  const { getByText } = await render(<ConversationThread {...baseProps} />);
+  const { getByText } = await renderThread(<ConversationThread {...baseProps} />);
   getByText('best strategy?');
   getByText('Start early.');
   getByText('Diversification');
@@ -23,19 +32,19 @@ test('renders user and assistant turns with citation chips', async () => {
 
 test('tapping a source calls onNavigateSource with the paragraph id', async () => {
   const onNavigateSource = jest.fn();
-  const { getByText } = await render(<ConversationThread {...baseProps} onNavigateSource={onNavigateSource} />);
+  const { getByText } = await renderThread(<ConversationThread {...baseProps} onNavigateSource={onNavigateSource} />);
   fireEvent.press(getByText('Diversification'));
   expect(onNavigateSource).toHaveBeenCalledWith('p-1');
 });
 
 test('shows a context chip when selectedText is present', async () => {
-  const { getByText } = await render(<ConversationThread {...baseProps} selectedText="callable bonds" />);
+  const { getByText } = await renderThread(<ConversationThread {...baseProps} selectedText="callable bonds" />);
   getByText(/Asking about/);
 });
 
 test('does not submit while loading', async () => {
   const onSubmit = jest.fn();
-  const { getByPlaceholderText, getByLabelText } = await render(
+  const { getByPlaceholderText, getByLabelText } = await renderThread(
     <ConversationThread {...baseProps} isLoading={true} onSubmit={onSubmit} />,
   );
   fireEvent.changeText(getByPlaceholderText('Ask a follow-up…'), 'another question');

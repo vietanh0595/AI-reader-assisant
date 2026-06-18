@@ -3458,11 +3458,7 @@ function ReaderApp() {
                     style={styles.sheetScrim}
                     onPress={() => setIsThreadOpen(false)}
                   />
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    pointerEvents="box-none"
-                    style={styles.threadKeyboardContainer}
-                  >
+                  <View pointerEvents="box-none" style={styles.threadKeyboardContainer}>
                     <View style={styles.threadSheet}>
                       <ConversationThread
                         turns={activeLibraryItem.conversation}
@@ -3480,7 +3476,7 @@ function ReaderApp() {
                         onClose={() => setIsThreadOpen(false)}
                       />
                     </View>
-                  </KeyboardAvoidingView>
+                  </View>
                 </View>
               ) : null}
 
