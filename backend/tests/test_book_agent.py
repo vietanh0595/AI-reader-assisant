@@ -143,5 +143,9 @@ def test_agent_includes_history_and_selection_in_input():
         history=[{"role": "user", "content": "first q"}, {"role": "assistant", "content": "first a"}],
         selected_text="highlighted passage", current_reading_order=0, include_whole_book=True,
     )
-    dumped = repr(client.calls[0]["input"])
-    assert "first q" in dumped and "first a" in dumped and "highlighted passage" in dumped
+    sent = client.calls[0]["input"]
+    contents = [item["content"] for item in sent if isinstance(item, dict) and "content" in item]
+    joined = " ".join(contents)
+    assert "first q" in joined
+    assert "first a" in joined
+    assert "highlighted passage" in joined

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import replace
 from typing import Any, Optional
 from uuid import UUID
 
@@ -79,8 +80,13 @@ class BookAgent:
                 return self._finalize(request_id, response.output_parsed, evidence_by_id)
             for call in calls:
                 input_items.append(call)
-                output = self._execute(call, user_id, book_id, current_reading_order,
-                                       max_reading_order, round_index, evidence_by_id)
+                output = self._execute(
+                    call,
+                    user_id=user_id, book_id=book_id,
+                    current_reading_order=current_reading_order,
+                    max_reading_order=max_reading_order,
+                    round_index=round_index, evidence_by_id=evidence_by_id,
+                )
                 input_items.append({
                     "type": "function_call_output", "call_id": call.call_id, "output": output,
                 })
@@ -115,14 +121,17 @@ class BookAgent:
             kwargs["reasoning"] = {"effort": self._reasoning_effort}
         return self._client.responses.parse(**kwargs)
 
-    def _execute(self, call, user_id, book_id, current_reading_order,
+    def _execute(self, call, *, user_id, book_id, current_reading_order,
                  max_reading_order, round_index, evidence_by_id) -> str:
         try:
             if call.name == "read_current_context":
                 return self._retrieval.read_current_context(
                     user_id=user_id, book_id=book_id, current_reading_order=current_reading_order)
             if call.name == "search_book":
-                args = json.loads(call.arguments or "{}")
+                try:
+                    args = json.loads(call.arguments or "{}")
+                except json.JSONDecodeError:
+                    return "Tool error: could not parse search query arguments."
                 query = args.get("query", "")
                 evidence: EvidenceSet = self._retrieval.retrieve(
                     user_id=user_id, book_id=book_id, question=query,
@@ -141,7 +150,6 @@ class BookAgent:
 
     @staticmethod
     def _rekey(item: EvidenceItem, sid: str) -> EvidenceItem:
-        from dataclasses import replace
         return replace(item, source_id=sid)
 
     def _finalize(self, request_id: str, parsed: Optional[ModelBookAnswer],
