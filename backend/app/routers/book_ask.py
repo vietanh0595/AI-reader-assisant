@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from ..auth.dependencies import get_current_user
 from ..db.models import User
 from ..indexing.models import Book, IndexVersionStatus
-from ..retrieval.models import BookAnswer
 from ..retrieval.repository import RetrievalRepository
 from ..retrieval.schemas import BookAskRequest, BookAskResponse, BookSourceResponse
 from ..retrieval.service import RetrievalService
