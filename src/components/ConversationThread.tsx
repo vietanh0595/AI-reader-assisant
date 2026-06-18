@@ -38,6 +38,9 @@ export function ConversationThread({
   const [draft, setDraft] = useState('');
 
   const handleSubmit = () => {
+    if (isLoading) {
+      return;
+    }
     const text = draft.trim();
     if (!text) {
       return;
@@ -144,8 +147,9 @@ export function ConversationThread({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send"
+          accessibilityState={{ disabled: isLoading }}
           onPress={handleSubmit}
-          style={styles.send}
+          style={[styles.send, isLoading ? styles.sendDisabled : null]}
         >
           <Text style={styles.sendIcon}>➤</Text>
         </Pressable>
@@ -343,6 +347,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#244f38',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendDisabled: {
+    backgroundColor: '#a8a298',
   },
   sendIcon: {
     color: '#fff',

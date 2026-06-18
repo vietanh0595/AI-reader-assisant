@@ -32,3 +32,13 @@ test('shows a context chip when selectedText is present', async () => {
   const { getByText } = await render(<ConversationThread {...baseProps} selectedText="callable bonds" />);
   getByText(/Asking about/);
 });
+
+test('does not submit while loading', async () => {
+  const onSubmit = jest.fn();
+  const { getByPlaceholderText, getByLabelText } = await render(
+    <ConversationThread {...baseProps} isLoading={true} onSubmit={onSubmit} />,
+  );
+  fireEvent.changeText(getByPlaceholderText('Ask a follow-up…'), 'another question');
+  fireEvent.press(getByLabelText('Send'));
+  expect(onSubmit).not.toHaveBeenCalled();
+});

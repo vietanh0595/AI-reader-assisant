@@ -2462,6 +2462,8 @@ function ReaderApp() {
     }
 
     clearSelection();
+    setIsThreadOpen(false);
+    setIsThreadCollapsed(false);
     setIsTocOpen(false);
     setIsSavedNotesOpen(false);
     setIsAskOpen(false);
@@ -3217,7 +3219,7 @@ function ReaderApp() {
     }
 
     const paragraphId = readingLocation?.paragraphId ?? currentBook.paragraphs[0]?.id ?? '';
-    const readingOrder = getParagraphIndex(paragraphId, currentBook.paragraphs);
+    const readingOrder = Math.max(0, getParagraphIndex(paragraphId, currentBook.paragraphs));
     const requestId = assistRequestId.current + 1;
     assistRequestId.current = requestId;
 
