@@ -44,6 +44,7 @@ import { createIndexApi } from './src/rag/indexApi';
 import { indexBook } from './src/rag/indexBook';
 import type { WholeBookAiState } from './src/rag/types';
 import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
+import { appendTurns } from './src/library/appendTurn';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -2366,6 +2367,7 @@ function ReaderApp() {
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
+  const [isThreadCollapsed, setIsThreadCollapsed] = useState(false);
   const [includeWholeBook, setIncludeWholeBook] = useState(false);
   const [askContextScope, setAskContextScope] = useState<AskContextScope>('selection');
   const [lastAskRequest, setLastAskRequest] = useState<LastAskRequest | null>(null);
@@ -3174,7 +3176,7 @@ function ReaderApp() {
   }
 
   function navigateToSource(paragraphId: string) {
-    clearSelection();
+    setIsThreadCollapsed(true);
     updateReadingLocation(paragraphId);
     setScrollTarget({ nonce: Date.now(), paragraphId });
   }
@@ -3220,6 +3222,14 @@ function ReaderApp() {
       if (assistRequestId.current === requestId) {
         setInsight({ body: result.body, eyebrow: result.eyebrow });
         setBookAskSources(result.sources);
+        updateActiveLibraryItem((item) => ({
+          ...item,
+          conversation: appendTurns(
+            item.conversation,
+            { role: 'user', text: questionText },
+            { role: 'assistant', text: result.body, sources: result.sources },
+          ),
+        }));
       }
     } catch (error) {
       if (assistRequestId.current === requestId) {
