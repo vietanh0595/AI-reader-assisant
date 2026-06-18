@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class ConversationTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class BookAskRequest(BaseModel):
@@ -13,6 +20,8 @@ class BookAskRequest(BaseModel):
     current_reading_order: int = Field(alias="currentReadingOrder", ge=0)
     current_chapter_id: Optional[str] = Field(default=None, alias="currentChapterId", max_length=160)
     include_whole_book: bool = Field(default=False, alias="includeWholeBook")
+    history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
+    selected_text: Optional[str] = Field(default=None, alias="selectedText", max_length=4000)
 
 
 class BookSourceResponse(BaseModel):

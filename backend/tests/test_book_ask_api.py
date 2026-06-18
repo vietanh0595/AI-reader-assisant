@@ -8,6 +8,33 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.indexing.models import Book, IndexVersion, IndexVersionStatus, RagChunk
 from backend.app.retrieval.answerer import ModelBookAnswer
+from backend.app.retrieval.schemas import BookAskRequest
+
+
+def test_book_ask_request_accepts_history_and_selected_text():
+    req = BookAskRequest.model_validate({
+        "question": "what is the best strategy?",
+        "currentParagraphId": "p-1",
+        "currentReadingOrder": 53,
+        "includeWholeBook": True,
+        "history": [
+            {"role": "user", "content": "what is a bond?"},
+            {"role": "assistant", "content": "A bond is a loan to an issuer."},
+        ],
+        "selectedText": "callable bonds can be redeemed",
+    })
+    assert req.history[0].role == "user"
+    assert req.selected_text == "callable bonds can be redeemed"
+
+
+def test_book_ask_request_history_and_selection_default_empty():
+    req = BookAskRequest.model_validate({
+        "question": "hi",
+        "currentParagraphId": "p-1",
+        "currentReadingOrder": 0,
+    })
+    assert req.history == []
+    assert req.selected_text is None
 
 
 def ask_request(
