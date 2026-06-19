@@ -3206,6 +3206,7 @@ function ReaderApp() {
       setIsWholeBookAiOpen(true);
       return;
     }
+    setAssistError(null);
     setIsAskOpen(false);
     setIsThreadCollapsed(false);
     setIsThreadOpen(true);
@@ -3226,7 +3227,11 @@ function ReaderApp() {
     const token = await getAccessToken();
 
     if (!token) {
-      setAssistError('Sign in is required to use Book scope.');
+      // Surface it in the thread, and open sign-in so the user can re-authenticate
+      // (the session likely expired). Closing the thread keeps sign-in visible.
+      setAssistError('Your sign-in has expired. Please sign in again to ask the book.');
+      setIsThreadOpen(false);
+      setIsSignInOpen(true);
       return;
     }
 
@@ -3477,6 +3482,7 @@ function ReaderApp() {
                         includeWholeBook={includeWholeBook}
                         selectedText={(selection ?? contextSelection)?.text ?? undefined}
                         isLoading={isAssistLoading && selectedAction === 'ask'}
+                        error={assistError}
                         onSubmit={(text) => {
                           setIsThreadCollapsed(false);
                           void runBookAsk(text);

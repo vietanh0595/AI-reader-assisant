@@ -42,6 +42,13 @@ test('shows a context chip when selectedText is present', async () => {
   getByText(/Asking about/);
 });
 
+test('shows an error message when one is provided', async () => {
+  const { getByText } = await renderThread(
+    <ConversationThread {...baseProps} error="Your sign-in has expired." />,
+  );
+  getByText('Your sign-in has expired.');
+});
+
 test('does not submit while loading', async () => {
   const onSubmit = jest.fn();
   const { getByPlaceholderText, getByLabelText } = await renderThread(

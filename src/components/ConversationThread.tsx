@@ -18,6 +18,7 @@ type ConversationThreadProps = {
   includeWholeBook: boolean;
   selectedText?: string;
   isLoading: boolean;
+  error?: string | null;
   onSubmit: (text: string) => void;
   onToggleWholeBook: () => void;
   onClear: () => void;
@@ -31,6 +32,7 @@ export function ConversationThread({
   includeWholeBook,
   selectedText,
   isLoading,
+  error,
   onSubmit,
   onToggleWholeBook,
   onClear,
@@ -153,6 +155,12 @@ export function ConversationThread({
           >
             <Text style={styles.ctxClear}>✕</Text>
           </Pressable>
+        </View>
+      ) : null}
+
+      {error && !isLoading ? (
+        <View style={styles.errorRow}>
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
@@ -340,6 +348,20 @@ const styles = StyleSheet.create({
     color: '#5d7c66',
     fontWeight: '700',
     fontSize: 12,
+  },
+  errorRow: {
+    backgroundColor: '#fbeaea',
+    borderColor: '#e6c3c3',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 14,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorText: {
+    color: '#9c2f2f',
+    fontSize: 13,
   },
   inputRow: {
     flexDirection: 'row',
