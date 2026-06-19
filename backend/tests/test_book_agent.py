@@ -149,3 +149,28 @@ def test_agent_includes_history_and_selection_in_input():
     assert "first q" in joined
     assert "first a" in joined
     assert "highlighted passage" in joined
+
+
+@dataclass
+class FakeReasoning:
+    id: str
+    type: str = "reasoning"
+
+
+def test_agent_echoes_reasoning_items_to_next_round():
+    # gpt-5-mini pairs each function_call with a reasoning item; both must be
+    # echoed back or the Responses API rejects the next request.
+    reasoning = FakeReasoning(id="rs_1")
+    client = FakeOpenAI([
+        FakeResponse(
+            output=[reasoning, FakeFunctionCall(name="search_book", arguments='{"query":"x"}', call_id="c1")],
+            output_parsed=None,
+        ),
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="E", body="B", citation_ids=["s0-0"])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                 selected_text=None, current_reading_order=0, include_whole_book=True)
+    second_input = client.calls[1]["input"]
+    assert reasoning in second_input  # reasoning item echoed back

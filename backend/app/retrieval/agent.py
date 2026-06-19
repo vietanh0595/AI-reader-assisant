@@ -78,8 +78,12 @@ class BookAgent:
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
             if not calls:
                 return self._finalize(request_id, response.output_parsed, evidence_by_id)
+            # Echo back ALL output items (reasoning + function calls), not just the
+            # calls. Reasoning models (e.g. gpt-5-mini) pair each function_call with a
+            # reasoning item; the Responses API rejects a function_call sent on the next
+            # turn without its required reasoning item.
+            input_items.extend(response.output)
             for call in calls:
-                input_items.append(call)
                 output = self._execute(
                     call,
                     user_id=user_id, book_id=book_id,
