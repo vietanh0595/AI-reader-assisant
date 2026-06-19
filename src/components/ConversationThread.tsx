@@ -21,7 +21,7 @@ type ConversationThreadProps = {
   onSubmit: (text: string) => void;
   onToggleWholeBook: () => void;
   onClear: () => void;
-  onNavigateSource: (paragraphId: string) => void;
+  onNavigateSource: (paragraphId: string, excerpt?: string) => void;
   onClearSelection: () => void;
   onClose: () => void;
 };

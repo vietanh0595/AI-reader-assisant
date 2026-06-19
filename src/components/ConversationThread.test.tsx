@@ -34,7 +34,7 @@ test('tapping a source calls onNavigateSource with the paragraph id', async () =
   const onNavigateSource = jest.fn();
   const { getByText } = await renderThread(<ConversationThread {...baseProps} onNavigateSource={onNavigateSource} />);
   fireEvent.press(getByText('Diversification'));
-  expect(onNavigateSource).toHaveBeenCalledWith('p-1');
+  expect(onNavigateSource).toHaveBeenCalledWith('p-1', 'ex');
 });
 
 test('shows a context chip when selectedText is present', async () => {

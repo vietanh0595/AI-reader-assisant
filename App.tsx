@@ -152,6 +152,7 @@ type ReaderBook = {
 type ScrollTarget = {
   nonce: number;
   paragraphId: string;
+  excerpt?: string;
 };
 
 type ReaderSelection = {
@@ -2034,6 +2035,17 @@ function createReaderHtml(readerParagraphs: Paragraph[]) {
         padding-top: 0;
       }
 
+      .reader-citation-flash {
+        animation: readerCitationFlash 2.6s ease-out forwards;
+        border-radius: 4px;
+      }
+
+      @keyframes readerCitationFlash {
+        0% { background-color: #fbe7a2; }
+        70% { background-color: #fbe7a2; }
+        100% { background-color: transparent; }
+      }
+
       .reader-body {
         font-size: 17px;
         font-weight: 400;
@@ -3183,10 +3195,10 @@ function ReaderApp() {
     }, 1500);
   }
 
-  function navigateToSource(paragraphId: string) {
+  function navigateToSource(paragraphId: string, excerpt?: string) {
     setIsThreadCollapsed(true);
     updateReadingLocation(paragraphId);
-    setScrollTarget({ nonce: Date.now(), paragraphId });
+    setScrollTarget({ nonce: Date.now(), paragraphId, excerpt });
   }
 
   function openConversationThread() {
@@ -3793,11 +3805,42 @@ function ReaderSurface({
   const webViewRef = useRef<WebView>(null);
 
   function injectScrollToTarget(target: ScrollTarget) {
+    // A citation excerpt is the start of the retrieved chunk's text. We try the
+    // exact paragraph id first, then fall back to finding the excerpt text in the
+    // rendered page, so navigation lands on the quoted passage even if the id
+    // doesn't resolve. Whatever we land on gets a brief highlight.
+    const needle = (target.excerpt ?? '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60);
     webViewRef.current?.injectJavaScript(`
       (function () {
+        function flash(el) {
+          if (!el) return;
+          el.classList.remove('reader-citation-flash');
+          // reflow so the animation restarts on repeat taps
+          void el.offsetWidth;
+          el.classList.add('reader-citation-flash');
+          setTimeout(function () { el.classList.remove('reader-citation-flash'); }, 2600);
+        }
         var target = document.getElementById(${JSON.stringify(target.paragraphId)});
         if (target) {
           target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          flash(target);
+          return;
+        }
+        var needle = ${JSON.stringify(needle)};
+        if (needle) {
+          var blocks = document.querySelectorAll('.reader-block');
+          for (var i = 0; i < blocks.length; i++) {
+            var t = (blocks[i].textContent || '').toLowerCase().replace(/\\s+/g, ' ');
+            if (t.indexOf(needle) !== -1) {
+              blocks[i].scrollIntoView({ block: 'start', behavior: 'smooth' });
+              flash(blocks[i]);
+              return;
+            }
+          }
         }
       })();
       true;

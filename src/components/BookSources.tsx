@@ -4,7 +4,7 @@ import type { BookSource } from '../rag/bookAskTypes';
 
 type BookSourcesProps = {
   sources: BookSource[];
-  onNavigate: (paragraphId: string) => void;
+  onNavigate: (paragraphId: string, excerpt?: string) => void;
 };
 
 export function BookSources({ sources, onNavigate }: BookSourcesProps) {
@@ -21,7 +21,7 @@ export function BookSources({ sources, onNavigate }: BookSourcesProps) {
             key={source.id}
             accessibilityRole="button"
             accessibilityLabel={source.chapterTitle ? `Source: ${source.chapterTitle}` : 'Source'}
-            onPress={() => onNavigate(source.paragraphId)}
+            onPress={() => onNavigate(source.paragraphId, source.excerpt)}
             style={styles.chip}
           >
             {source.chapterTitle ? (

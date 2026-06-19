@@ -27,12 +27,12 @@ test('renders source chips for each source', async () => {
   expect(screen.getAllByRole('button')).toHaveLength(2);
 });
 
-test('calls onNavigate with paragraphId when chip is pressed', async () => {
+test('calls onNavigate with paragraphId and excerpt when chip is pressed', async () => {
   const onNavigate = jest.fn();
-  const source = makeSource({ paragraphId: 'p99' });
+  const source = makeSource({ paragraphId: 'p99', excerpt: 'Monetary policy raises interest rates.' });
   await render(<BookSources sources={[source]} onNavigate={onNavigate} />);
   fireEvent.press(screen.getAllByRole('button')[0]);
-  expect(onNavigate).toHaveBeenCalledWith('p99');
+  expect(onNavigate).toHaveBeenCalledWith('p99', 'Monetary policy raises interest rates.');
 });
 
 test('shows chapter title when available', async () => {
