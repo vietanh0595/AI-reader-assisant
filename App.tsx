@@ -3809,11 +3809,11 @@ function ReaderSurface({
     // exact paragraph id first, then fall back to finding the excerpt text in the
     // rendered page, so navigation lands on the quoted passage even if the id
     // doesn't resolve. Whatever we land on gets a brief highlight.
-    const needle = (target.excerpt ?? '')
+    const excerpt = (target.excerpt ?? '')
       .toLowerCase()
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 60);
+      .slice(0, 160);
     webViewRef.current?.injectJavaScript(`
       (function () {
         function flash(el) {
@@ -3824,24 +3824,29 @@ function ReaderSurface({
           el.classList.add('reader-citation-flash');
           setTimeout(function () { el.classList.remove('reader-citation-flash'); }, 2600);
         }
-        var target = document.getElementById(${JSON.stringify(target.paragraphId)});
-        if (target) {
-          target.scrollIntoView({ block: 'start', behavior: 'smooth' });
-          flash(target);
-          return;
+        function land(el) {
+          if (!el) return false;
+          el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          flash(el);
+          return true;
         }
-        var needle = ${JSON.stringify(needle)};
-        if (needle) {
-          var blocks = document.querySelectorAll('.reader-block');
-          for (var i = 0; i < blocks.length; i++) {
-            var t = (blocks[i].textContent || '').toLowerCase().replace(/\\s+/g, ' ');
-            if (t.indexOf(needle) !== -1) {
-              blocks[i].scrollIntoView({ block: 'start', behavior: 'smooth' });
-              flash(blocks[i]);
-              return;
-            }
-          }
+        if (land(document.getElementById(${JSON.stringify(target.paragraphId)}))) return;
+        var ex = ${JSON.stringify(excerpt)};
+        if (!ex) return;
+        // The excerpt is the start of the retrieved chunk's text and may span a
+        // heading + body (separate blocks). Find the block sharing the longest
+        // leading run of characters with the excerpt — that's the chunk's first
+        // paragraph — so we land even across heading/body splits.
+        var blocks = document.querySelectorAll('.reader-block');
+        var best = null, bestLen = 0;
+        for (var i = 0; i < blocks.length; i++) {
+          var t = (blocks[i].textContent || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+          if (!t) continue;
+          var n = Math.min(t.length, ex.length), k = 0;
+          while (k < n && t.charCodeAt(k) === ex.charCodeAt(k)) k++;
+          if (k > bestLen) { bestLen = k; best = blocks[i]; }
         }
+        if (bestLen >= 16) land(best);
       })();
       true;
     `);
