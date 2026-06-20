@@ -3834,6 +3834,12 @@ function ReaderSurface({
           if (!el) return false;
           el.scrollIntoView({ block: 'start', behavior: 'smooth' });
           flash(el);
+          // With content-visibility:auto, off-screen blocks use estimated heights,
+          // so a single long scrollIntoView lands imprecisely. Re-scroll a few times
+          // as the real content renders to converge on the exact target.
+          setTimeout(function () { el.scrollIntoView({ block: 'start', behavior: 'auto' }); }, 350);
+          setTimeout(function () { el.scrollIntoView({ block: 'start', behavior: 'auto' }); }, 750);
+          setTimeout(function () { el.scrollIntoView({ block: 'start', behavior: 'auto' }); }, 1200);
           return true;
         }
         if (land(document.getElementById(${JSON.stringify(target.paragraphId)}))) return;
