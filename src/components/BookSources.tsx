@@ -15,7 +15,7 @@ export function BookSources({ sources, onNavigate }: BookSourcesProps) {
   return (
     <View testID="book-sources-container">
       <Text style={styles.heading}>Sources</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.row}>
         {sources.map((source) => (
           <Pressable
             key={source.id}

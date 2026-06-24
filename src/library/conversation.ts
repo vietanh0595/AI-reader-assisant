@@ -4,6 +4,9 @@ export type ConversationTurn = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  selectedText?: string;
+  contextParagraphId?: string;
+  contextTurnId?: string;
   sources?: BookSource[];
   createdAt: string;
 };

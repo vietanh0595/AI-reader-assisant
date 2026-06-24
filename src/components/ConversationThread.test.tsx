@@ -49,6 +49,15 @@ test('shows an error message when one is provided', async () => {
   getByText('Your sign-in has expired.');
 });
 
+test('shows context quote in user bubble when turn has selectedText', async () => {
+  const turns = [
+    { id: 't1', role: 'user' as const, text: 'what is this?', selectedText: 'dollar-cost averaging', createdAt: 'now' },
+  ];
+  const { getByText } = await renderThread(<ConversationThread {...baseProps} turns={turns} />);
+  getByText('what is this?');
+  getByText('dollar-cost averaging');
+});
+
 test('does not submit while loading', async () => {
   const onSubmit = jest.fn();
   const { getByPlaceholderText, getByLabelText } = await renderThread(

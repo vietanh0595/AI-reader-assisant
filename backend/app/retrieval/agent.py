@@ -108,10 +108,13 @@ class BookAgent:
             role = turn["role"] if isinstance(turn, dict) else turn.role
             content = turn["content"] if isinstance(turn, dict) else turn.content
             items.append({"role": role, "content": content})
+        # Append selected_text inline so the model treats it as informational context,
+        # not a constraint. A separate preceding message caused the model to anchor on
+        # it and abstain when the question ranged beyond that passage.
+        user_content = question
         if selected_text:
-            items.append({"role": "user",
-                          "content": f"The reader highlighted this passage: \"{selected_text}\""})
-        items.append({"role": "user", "content": question})
+            user_content = f"{question}\n\nFor context, I was reading: \"{selected_text}\""
+        items.append({"role": "user", "content": user_content})
         return items
 
     def _call(self, input_items: list[Any], *, with_tools: bool):

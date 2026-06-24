@@ -8,6 +8,9 @@ export function appendTurns(
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
     sources: t.sources,
+    selectedText: t.selectedText,
+    contextParagraphId: t.contextParagraphId,
+    contextTurnId: t.contextTurnId,
     role: t.role,
     text: t.text,
   }));

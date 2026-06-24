@@ -2377,6 +2377,7 @@ function ReaderApp() {
   const [isAskOpen, setIsAskOpen] = useState(false);
   const [isAssistLoading, setIsAssistLoading] = useState(false);
   const [assistError, setAssistError] = useState<string | null>(null);
+  const [pendingRetry, setPendingRetry] = useState<{ questionText: string; ctx?: { quotedText: string; quotedTurnId?: string } } | null>(null);
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
@@ -2455,6 +2456,13 @@ function ReaderApp() {
     setIncludeWholeBook(false);
     setAskContextScope('selection');
     setLastAskRequest(null);
+  }
+
+  // Clears only the context chip in the conversation thread without resetting
+  // the loading state or cancelling an in-flight request.
+  function clearContextChip() {
+    setSelection(null);
+    setContextSelection(null);
   }
 
   function openLibrary() {
@@ -3090,6 +3098,33 @@ function ReaderApp() {
 
       if (assistRequestId.current === requestId) {
         setInsight(nextInsight);
+        // Append to conversation so every insight is available as history when the
+        // user opens the thread. Using a per-action label as the user turn keeps
+        // the thread readable without requiring the user to explicitly "Ask more"
+        // between each action (explain → example → thread: both are there).
+        const actionLabel: Partial<Record<InsightAction, string>> = {
+          summarize: "Summarize what's on this page",
+          explain: 'Explain this passage',
+          example: 'Give me an example',
+          rephrase: 'Rephrase this',
+        };
+        const turnQuestion = questionText ?? actionLabel[action] ?? 'Tell me about this';
+        const turnSelectedText = assistSelection.text;
+        const turnParagraphId = assistSelection.paragraphId;
+        updateActiveLibraryItem((item) => {
+          const last = item.conversation[item.conversation.length - 1];
+          if (last?.role === 'assistant' && last.text === nextInsight.body) {
+            return item; // exact same result already in history, skip
+          }
+          return {
+            ...item,
+            conversation: appendTurns(
+              item.conversation,
+              { role: 'user', text: turnQuestion, selectedText: turnSelectedText, contextParagraphId: turnParagraphId },
+              { role: 'assistant', text: nextInsight.body },
+            ),
+          };
+        });
       }
     } catch (error) {
       if (assistRequestId.current === requestId) {
@@ -3216,7 +3251,19 @@ function ReaderApp() {
     updateActiveLibraryItem((item) => ({ ...item, conversation: [] }));
   }
 
-  async function runBookAsk(questionText: string) {
+  async function runBookAsk(
+    questionText: string,
+    ctx?: { quotedText: string; quotedTurnId?: string },
+    opts?: { skipUserTurn?: boolean },
+  ) {
+    // Capture before any awaits — clearContextChip() is called immediately on submit
+    // which clears selection state, so we must snapshot it here while it's still set.
+    const activeCtx = selection ?? contextSelection;
+    // ctx comes from long-pressing an answer in the thread; takes priority over the
+    // book-selection chip. Long-pressed answers have no book paragraphId to navigate to.
+    const chipText = ctx?.quotedText ?? activeCtx?.text ?? undefined;
+    const chipParagraphId = ctx ? undefined : activeCtx?.paragraphId ?? undefined;
+    const chipTurnId = ctx?.quotedTurnId ?? undefined;
     const cloudBookId = activeLibraryItem.wholeBookAi.cloudBookId;
 
     if (!cloudBookId) {
@@ -3243,7 +3290,20 @@ function ReaderApp() {
     setSelectedAction('ask');
     setInsight(null);
     setAssistError(null);
+    setPendingRetry(null);
     setIsAssistLoading(true);
+
+    // Show the user turn immediately before waiting for the API.
+    // On retry the turn is already in the conversation, so skip.
+    if (!opts?.skipUserTurn) {
+      updateActiveLibraryItem((item) => ({
+        ...item,
+        conversation: appendTurns(
+          item.conversation,
+          { role: 'user', text: questionText, selectedText: chipText, contextParagraphId: chipParagraphId, contextTurnId: chipTurnId },
+        ),
+      }));
+    }
 
     try {
       const result = await requestBookAsk({
@@ -3255,7 +3315,7 @@ function ReaderApp() {
         includeWholeBook,
         accessToken: token,
         history: buildHistory(activeLibraryItem.conversation),
-        selectedText: (selection ?? contextSelection)?.text ?? undefined,
+        selectedText: chipText,
       });
 
       if (assistRequestId.current === requestId) {
@@ -3265,7 +3325,6 @@ function ReaderApp() {
           ...item,
           conversation: appendTurns(
             item.conversation,
-            { role: 'user', text: questionText },
             { role: 'assistant', text: result.body, sources: result.sources },
           ),
         }));
@@ -3273,6 +3332,7 @@ function ReaderApp() {
     } catch (error) {
       if (assistRequestId.current === requestId) {
         setAssistError(getErrorMessage(error));
+        setPendingRetry({ questionText, ctx });
       }
     } finally {
       if (assistRequestId.current === requestId) {
@@ -3483,14 +3543,18 @@ function ReaderApp() {
                         selectedText={(selection ?? contextSelection)?.text ?? undefined}
                         isLoading={isAssistLoading && selectedAction === 'ask'}
                         error={assistError}
-                        onSubmit={(text) => {
+                        onSubmit={(text, ctx) => {
                           setIsThreadCollapsed(false);
-                          void runBookAsk(text);
+                          void runBookAsk(text, ctx);
                         }}
+                        onRetry={pendingRetry ? () => {
+                          const { questionText, ctx } = pendingRetry;
+                          void runBookAsk(questionText, ctx, { skipUserTurn: true });
+                        } : undefined}
                         onToggleWholeBook={() => setIncludeWholeBook((value) => !value)}
                         onClear={clearConversation}
                         onNavigateSource={navigateToSource}
-                        onClearSelection={clearSelection}
+                        onClearSelection={clearContextChip}
                         onClose={() => setIsThreadOpen(false)}
                       />
                     </View>
