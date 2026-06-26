@@ -132,42 +132,33 @@ function computeLayout(data: MindMapData): ComputedLayout {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function EdgePath({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2;
-
-  // Pull control point 30px toward the center (CX, CY)
-  const dx = CX - midX;
-  const dy = CY - midY;
+// Spoke from center to a ring node — the primary "mind map" edge
+function SpokeEdge({ x2, y2 }: { x2: number; y2: number }) {
+  const midX = (CX + x2) / 2;
+  const midY = (CY + y2) / 2;
+  // Slight outward bow: pull control point away from center by 20px
+  const dx = midX - CX;
+  const dy = midY - CY;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ctrlX = midX + (dx / len) * 30;
-  const ctrlY = midY + (dy / len) * 30;
-
-  const d = `M ${x1} ${y1} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
-
+  const ctrlX = midX + (dx / len) * 20;
+  const ctrlY = midY + (dy / len) * 20;
+  const d = `M ${CX} ${CY} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
   return (
-    <Path
-      d={d}
-      stroke="#888"
-      strokeWidth={1.5}
-      fill="none"
-      markerEnd="url(#arrowhead)"
-    />
+    <Path d={d} stroke="#c4bdb5" strokeWidth={1.5} fill="none" markerEnd="url(#arrowhead)" />
   );
 }
 
+// Pure-visual node shape — no onPress here; tapping is handled by the overlay below the SVG
 function NodeShape({
   node,
   x,
   y,
   isLeaf,
-  onTap,
 }: {
   node: MindMapNode;
   x: number;
   y: number;
   isLeaf: boolean;
-  onTap: () => void;
 }) {
   const fill = NODE_COLORS[node.type];
   const textColor = NODE_TEXT_COLORS[node.type];
@@ -176,11 +167,10 @@ function NodeShape({
   const h = BASE_HEIGHT * scale;
 
   if (isLeaf) {
-    // Ellipse: rx=45 * scale, ry=18 * scale
     const rx = 45 * scale;
     const ry = 18 * scale;
     return (
-      <G onPress={onTap} testID={`mindmap-node-${node.id}`}>
+      <G>
         <Ellipse cx={x} cy={y} rx={rx} ry={ry} fill={fill} />
         <SvgText
           x={x}
@@ -197,18 +187,9 @@ function NodeShape({
     );
   }
 
-  // Branch node: rounded rect
   return (
-    <G onPress={onTap} testID={`mindmap-node-${node.id}`}>
-      <Rect
-        x={x - w / 2}
-        y={y - h / 2}
-        width={w}
-        height={h}
-        rx={10}
-        ry={10}
-        fill={fill}
-      />
+    <G>
+      <Rect x={x - w / 2} y={y - h / 2} width={w} height={h} rx={10} ry={10} fill={fill} />
       <SvgText
         x={x}
         y={y}
@@ -303,84 +284,111 @@ export function MindMapScreen({
             ) : (
               <ScrollView
                 contentContainerStyle={styles.svgContainer}
-                maximumZoomScale={3}
-                minimumZoomScale={0.5}
                 showsHorizontalScrollIndicator={false}
                 showsVerticalScrollIndicator={false}
               >
-                <Svg width={SVG_WIDTH} height={SVG_HEIGHT} viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}>
-                  <Defs>
-                    <Marker
-                      id="arrowhead"
-                      markerWidth={8}
-                      markerHeight={6}
-                      refX={8}
-                      refY={3}
-                      orient="auto"
-                    >
-                      <Polygon points="0 0, 8 3, 0 6" fill="#888" />
-                    </Marker>
-                  </Defs>
+                {/*
+                 * We layer two things inside a fixed-size View:
+                 *   1. The SVG (visual only — pointerEvents="none" so it never
+                 *      swallows touches)
+                 *   2. Absolutely-positioned TouchableOpacity elements that sit
+                 *      exactly over each node and handle taps reliably on iOS.
+                 */}
+                <View style={{ width: SVG_WIDTH, height: SVG_HEIGHT }}>
+                  <Svg
+                    width={SVG_WIDTH}
+                    height={SVG_HEIGHT}
+                    viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+                    pointerEvents="none"
+                  >
+                    <Defs>
+                      <Marker
+                        id="arrowhead"
+                        markerWidth={8}
+                        markerHeight={6}
+                        refX={8}
+                        refY={3}
+                        orient="auto"
+                      >
+                        <Polygon points="0 0, 8 3, 0 6" fill="#c4bdb5" />
+                      </Marker>
+                    </Defs>
 
-                  {/* Edges first (below nodes) */}
-                  {layout.edges.map((le, i) => (
-                    <EdgePath
-                      key={i}
-                      x1={le.x1}
-                      y1={le.y1}
-                      x2={le.x2}
-                      y2={le.y2}
-                    />
-                  ))}
+                    {/* Hub-and-spoke: one curved line from center to every ring node */}
+                    {layout.nodes.map((ln, i) => (
+                      <SpokeEdge key={`spoke-${i}`} x2={ln.x} y2={ln.y} />
+                    ))}
 
-                  {/* Center node */}
-                  <G>
-                    <Rect
-                      x={CX - CENTER_WIDTH / 2}
-                      y={CY - CENTER_HEIGHT / 2}
-                      width={CENTER_WIDTH}
-                      height={CENTER_HEIGHT}
-                      rx={10}
-                      ry={10}
-                      fill={CENTER_NODE_COLOR}
-                    />
-                    <SvgText
-                      x={CX}
-                      y={CY}
-                      textAnchor="middle"
-                      alignmentBaseline="middle"
-                      fontSize={11}
-                      fill={CENTER_NODE_TEXT}
-                      fontWeight="700"
-                    >
-                      {bookTitle.length > 16 ? bookTitle.slice(0, 15) + "…" : bookTitle}
-                    </SvgText>
-                    {data?.genre ? (
+                    {/* Center node (drawn after spokes so it sits on top) */}
+                    <G>
+                      <Rect
+                        x={CX - CENTER_WIDTH / 2}
+                        y={CY - CENTER_HEIGHT / 2}
+                        width={CENTER_WIDTH}
+                        height={CENTER_HEIGHT}
+                        rx={10}
+                        ry={10}
+                        fill={CENTER_NODE_COLOR}
+                      />
                       <SvgText
                         x={CX}
-                        y={CY + 14}
+                        y={CY - 6}
                         textAnchor="middle"
                         alignmentBaseline="middle"
-                        fontSize={9}
-                        fill="rgba(255,255,255,0.7)"
+                        fontSize={11}
+                        fill={CENTER_NODE_TEXT}
+                        fontWeight="700"
                       >
-                        {data.genre}
+                        {bookTitle.length > 16 ? bookTitle.slice(0, 15) + "…" : bookTitle}
                       </SvgText>
-                    ) : null}
-                  </G>
+                      {data?.genre ? (
+                        <SvgText
+                          x={CX}
+                          y={CY + 10}
+                          textAnchor="middle"
+                          alignmentBaseline="middle"
+                          fontSize={9}
+                          fill="rgba(255,255,255,0.7)"
+                        >
+                          {data.genre}
+                        </SvgText>
+                      ) : null}
+                    </G>
 
-                  {/* Leaf / branch nodes */}
-                  {layout.nodes.map((ln) => (
-                    <NodeShape
-                      key={ln.node.id}
-                      node={ln.node}
-                      x={ln.x}
-                      y={ln.y}
-                      isLeaf={ln.isLeaf}
-                      onTap={() => onNodeTap(ln.node)}
-                    />
-                  ))}
-                </Svg>
+                    {/* Ring nodes — visual only */}
+                    {layout.nodes.map((ln) => (
+                      <NodeShape
+                        key={ln.node.id}
+                        node={ln.node}
+                        x={ln.x}
+                        y={ln.y}
+                        isLeaf={ln.isLeaf}
+                      />
+                    ))}
+                  </Svg>
+
+                  {/* Touch overlay: one invisible TouchableOpacity per node */}
+                  {layout.nodes.map((ln) => {
+                    const scale = 0.85 + ln.node.importance * 0.3;
+                    const hw = ln.isLeaf ? 45 * scale * 2 + 16 : BASE_WIDTH * scale + 16;
+                    const hh = ln.isLeaf ? 18 * scale * 2 + 16 : BASE_HEIGHT * scale + 16;
+                    return (
+                      <TouchableOpacity
+                        key={ln.node.id}
+                        testID={`mindmap-node-${ln.node.id}`}
+                        style={{
+                          position: "absolute",
+                          left: ln.x - hw / 2,
+                          top: ln.y - hh / 2,
+                          width: hw,
+                          height: hh,
+                        }}
+                        onPress={() => onNodeTap(ln.node)}
+                        activeOpacity={0.7}
+                      />
+                    );
+                  })}
+                </View>
               </ScrollView>
             )
           ) : null}

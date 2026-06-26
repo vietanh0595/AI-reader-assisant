@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from backend.app.mindmap.schemas import (
     ChapterExtractionResult,
@@ -318,3 +319,27 @@ class TestGenerate:
         assert "to" in stored_data["edges"][0], "edges must use 'to' alias"
         assert "from_id" not in stored_data["edges"][0]
         assert "to_id" not in stored_data["edges"][0]
+
+
+class TestLoadChapters:
+    def test_binds_book_id_as_uuid_not_varchar(self):
+        """_load_chapters() must compare books.id to a UUID-typed bind value."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.scalars.return_value.all.return_value = []
+
+        service = MindMapService(
+            session_factory=MagicMock(return_value=mock_session),
+            extractor=MagicMock(),
+            consolidator=MagicMock(),
+        )
+        book_id = uuid4()
+
+        service._load_chapters(book_id)
+
+        statement = mock_session.scalars.call_args.args[0]
+        compiled = statement.compile(dialect=postgresql.dialect())
+
+        assert any(value == book_id for value in compiled.params.values())
+        assert all(value != str(book_id) for value in compiled.params.values())

@@ -1,0 +1,1370 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`rendering: failed state shows title, error and retry button 1`] = `
+<Modal
+  animationType="slide"
+  onRequestClose={[MockFunction]}
+  visible={true}
+>
+  <View
+    style={
+      {
+        "backgroundColor": "#fff",
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "borderBottomColor": "#e4dfd6",
+          "borderBottomWidth": 1,
+          "flexDirection": "row",
+          "paddingBottom": 12,
+          "paddingHorizontal": 16,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "minWidth": 70,
+            "opacity": 1,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#244f38",
+              "fontSize": 15,
+              "fontWeight": "600",
+            }
+          }
+        >
+          ← Back
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            "color": "#171715",
+            "flex": 1,
+            "fontSize": 16,
+            "fontWeight": "700",
+            "textAlign": "center",
+          }
+        }
+      >
+        Atomic Habits
+      </Text>
+      <View
+        style={
+          {
+            "minWidth": 70,
+          }
+        }
+      />
+    </View>
+    <View
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flex": 1,
+            "gap": 12,
+            "justifyContent": "center",
+            "paddingHorizontal": 32,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#9c2f2f",
+              "fontSize": 18,
+              "fontWeight": "700",
+            }
+          }
+        >
+          Generation failed
+        </Text>
+        <Text
+          style={
+            {
+              "color": "#b06060",
+              "fontSize": 13,
+              "textAlign": "center",
+            }
+          }
+        >
+          Network timeout
+        </Text>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onClick={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "backgroundColor": "#7c5cbf",
+              "borderRadius": 20,
+              "marginTop": 4,
+              "opacity": 1,
+              "paddingHorizontal": 24,
+              "paddingVertical": 10,
+            }
+          }
+        >
+          <Text
+            style={
+              {
+                "color": "#fff",
+                "fontSize": 14,
+                "fontWeight": "600",
+              }
+            }
+          >
+            Retry
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</Modal>
+`;
+
+exports[`rendering: generating state shows spinner and label 1`] = `
+<Modal
+  animationType="slide"
+  onRequestClose={[MockFunction]}
+  visible={true}
+>
+  <View
+    style={
+      {
+        "backgroundColor": "#fff",
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "borderBottomColor": "#e4dfd6",
+          "borderBottomWidth": 1,
+          "flexDirection": "row",
+          "paddingBottom": 12,
+          "paddingHorizontal": 16,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "minWidth": 70,
+            "opacity": 1,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#244f38",
+              "fontSize": 15,
+              "fontWeight": "600",
+            }
+          }
+        >
+          ← Back
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            "color": "#171715",
+            "flex": 1,
+            "fontSize": 16,
+            "fontWeight": "700",
+            "textAlign": "center",
+          }
+        }
+      >
+        Atomic Habits
+      </Text>
+      <View
+        style={
+          {
+            "minWidth": 70,
+          }
+        }
+      />
+    </View>
+    <View
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flex": 1,
+            "gap": 12,
+            "justifyContent": "center",
+            "paddingHorizontal": 32,
+          }
+        }
+      >
+        <ActivityIndicator
+          color="#7c5cbf"
+          size="large"
+        />
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "marginTop": 8,
+            }
+          }
+        >
+          Generating mind map…
+        </Text>
+      </View>
+    </View>
+  </View>
+</Modal>
+`;
+
+exports[`rendering: insufficient_content state shows friendly message 1`] = `
+<Modal
+  animationType="slide"
+  onRequestClose={[MockFunction]}
+  visible={true}
+>
+  <View
+    style={
+      {
+        "backgroundColor": "#fff",
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "borderBottomColor": "#e4dfd6",
+          "borderBottomWidth": 1,
+          "flexDirection": "row",
+          "paddingBottom": 12,
+          "paddingHorizontal": 16,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "minWidth": 70,
+            "opacity": 1,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#244f38",
+              "fontSize": 15,
+              "fontWeight": "600",
+            }
+          }
+        >
+          ← Back
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            "color": "#171715",
+            "flex": 1,
+            "fontSize": 16,
+            "fontWeight": "700",
+            "textAlign": "center",
+          }
+        }
+      >
+        Atomic Habits
+      </Text>
+      <View
+        style={
+          {
+            "minWidth": 70,
+          }
+        }
+      />
+    </View>
+    <View
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flex": 1,
+            "gap": 12,
+            "justifyContent": "center",
+            "paddingHorizontal": 32,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 16,
+              "fontWeight": "600",
+              "marginTop": 8,
+            }
+          }
+        >
+          Not enough content
+        </Text>
+        <Text
+          style={
+            {
+              "color": "#a8a298",
+              "fontSize": 13,
+              "textAlign": "center",
+            }
+          }
+        >
+          Read more of the book before generating a mind map.
+        </Text>
+      </View>
+    </View>
+  </View>
+</Modal>
+`;
+
+exports[`rendering: ready state renders SVG with node labels 1`] = `
+<Modal
+  animationType="slide"
+  onRequestClose={[MockFunction]}
+  visible={true}
+>
+  <View
+    style={
+      {
+        "backgroundColor": "#fff",
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "borderBottomColor": "#e4dfd6",
+          "borderBottomWidth": 1,
+          "flexDirection": "row",
+          "paddingBottom": 12,
+          "paddingHorizontal": 16,
+          "paddingTop": 56,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Back"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onClick={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "minWidth": 70,
+            "opacity": 1,
+          }
+        }
+      >
+        <Text
+          style={
+            {
+              "color": "#244f38",
+              "fontSize": 15,
+              "fontWeight": "600",
+            }
+          }
+        >
+          ← Back
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            "color": "#171715",
+            "flex": 1,
+            "fontSize": 16,
+            "fontWeight": "700",
+            "textAlign": "center",
+          }
+        }
+      >
+        Atomic Habits
+      </Text>
+      <View
+        style={
+          {
+            "minWidth": 70,
+          }
+        }
+      />
+    </View>
+    <View
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <RCTScrollView
+        contentContainerStyle={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "padding": 16,
+          }
+        }
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+      >
+        <View>
+          <View
+            style={
+              {
+                "height": 600,
+                "width": 600,
+              }
+            }
+          >
+            <RNSVGSvgView
+              align="xMidYMid"
+              bbHeight={600}
+              bbWidth={600}
+              focusable={false}
+              height={600}
+              meetOrSlice={0}
+              minX={0}
+              minY={0}
+              pointerEvents="none"
+              style={
+                [
+                  {
+                    "backgroundColor": "transparent",
+                    "borderWidth": 0,
+                  },
+                  {
+                    "flex": 0,
+                    "height": 600,
+                    "width": 600,
+                  },
+                ]
+              }
+              vbHeight={600}
+              vbWidth={600}
+              width={600}
+            >
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGDefs>
+                  <RNSVGMarker
+                    markerHeight={6}
+                    markerUnits="strokeWidth"
+                    markerWidth={8}
+                    name="arrowhead"
+                    orient="auto"
+                    refX={8}
+                    refY={3}
+                  >
+                    <RNSVGPath
+                      d="M0 0 8 3 0 6z"
+                      fill={
+                        {
+                          "payload": 4291083701,
+                          "type": 0,
+                        }
+                      }
+                      propList={
+                        [
+                          "fill",
+                        ]
+                      }
+                    />
+                  </RNSVGMarker>
+                </RNSVGDefs>
+                <RNSVGPath
+                  d="M 300 300 Q 410 300 480 300"
+                  fill={null}
+                  markerEnd="arrowhead"
+                  propList={
+                    [
+                      "fill",
+                      "stroke",
+                      "strokeWidth",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4291083701,
+                      "type": 0,
+                    }
+                  }
+                  strokeWidth={1.5}
+                />
+                <RNSVGPath
+                  d="M 300 300 Q 245.00000000000003 395.2627944162883 210.00000000000006 455.88457268119896"
+                  fill={null}
+                  markerEnd="arrowhead"
+                  propList={
+                    [
+                      "fill",
+                      "stroke",
+                      "strokeWidth",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4291083701,
+                      "type": 0,
+                    }
+                  }
+                  strokeWidth={1.5}
+                />
+                <RNSVGPath
+                  d="M 300 300 Q 244.99999999999994 204.73720558371176 209.99999999999991 144.11542731880107"
+                  fill={null}
+                  markerEnd="arrowhead"
+                  propList={
+                    [
+                      "fill",
+                      "stroke",
+                      "strokeWidth",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4291083701,
+                      "type": 0,
+                    }
+                  }
+                  strokeWidth={1.5}
+                />
+                <RNSVGGroup
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                >
+                  <RNSVGRect
+                    fill={
+                      {
+                        "payload": 4286340287,
+                        "type": 0,
+                      }
+                    }
+                    height={50}
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rx={10}
+                    ry={10}
+                    width={110}
+                    x={245}
+                    y={275}
+                  />
+                  <RNSVGText
+                    alignmentBaseline="middle"
+                    content={null}
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4294967295,
+                        "type": 0,
+                      }
+                    }
+                    font={
+                      {
+                        "fontSize": 11,
+                        "fontWeight": "700",
+                        "textAnchor": "middle",
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rotate={[]}
+                    x={
+                      [
+                        300,
+                      ]
+                    }
+                    y={
+                      [
+                        294,
+                      ]
+                    }
+                  >
+                    <RNSVGTSpan
+                      content="Atomic Habits"
+                      dx={[]}
+                      dy={[]}
+                      fill={
+                        {
+                          "payload": 4278190080,
+                          "type": 0,
+                        }
+                      }
+                      font={{}}
+                      rotate={[]}
+                      x={[]}
+                      y={[]}
+                    />
+                  </RNSVGText>
+                  <RNSVGText
+                    alignmentBaseline="middle"
+                    content={null}
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 3019898879,
+                        "type": 0,
+                      }
+                    }
+                    font={
+                      {
+                        "fontSize": 9,
+                        "textAnchor": "middle",
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rotate={[]}
+                    x={
+                      [
+                        300,
+                      ]
+                    }
+                    y={
+                      [
+                        310,
+                      ]
+                    }
+                  >
+                    <RNSVGTSpan
+                      content="non-fiction"
+                      dx={[]}
+                      dy={[]}
+                      fill={
+                        {
+                          "payload": 4278190080,
+                          "type": 0,
+                        }
+                      }
+                      font={{}}
+                      rotate={[]}
+                      x={[]}
+                      y={[]}
+                    />
+                  </RNSVGText>
+                </RNSVGGroup>
+                <RNSVGGroup
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                >
+                  <RNSVGRect
+                    fill={
+                      {
+                        "payload": 4289255632,
+                        "type": 0,
+                      }
+                    }
+                    height={40.86}
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rx={10}
+                    ry={10}
+                    width={102.15}
+                    x={428.925}
+                    y={279.57}
+                  />
+                  <RNSVGText
+                    alignmentBaseline="middle"
+                    content={null}
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4279914576,
+                        "type": 0,
+                      }
+                    }
+                    font={
+                      {
+                        "fontSize": 10,
+                        "fontWeight": "600",
+                        "textAnchor": "middle",
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rotate={[]}
+                    x={
+                      [
+                        480,
+                      ]
+                    }
+                    y={
+                      [
+                        300,
+                      ]
+                    }
+                  >
+                    <RNSVGTSpan
+                      content="Habit Loop"
+                      dx={[]}
+                      dy={[]}
+                      fill={
+                        {
+                          "payload": 4278190080,
+                          "type": 0,
+                        }
+                      }
+                      font={{}}
+                      rotate={[]}
+                      x={[]}
+                      y={[]}
+                    />
+                  </RNSVGText>
+                </RNSVGGroup>
+                <RNSVGGroup
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                >
+                  <RNSVGEllipse
+                    cx={210.00000000000006}
+                    cy={455.88457268119896}
+                    fill={
+                      {
+                        "payload": 4291341036,
+                        "type": 0,
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rx={49.725}
+                    ry={19.89}
+                  />
+                  <RNSVGText
+                    alignmentBaseline="middle"
+                    content={null}
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4282198894,
+                        "type": 0,
+                      }
+                    }
+                    font={
+                      {
+                        "fontSize": 10,
+                        "fontWeight": "600",
+                        "textAnchor": "middle",
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rotate={[]}
+                    x={
+                      [
+                        210.00000000000006,
+                      ]
+                    }
+                    y={
+                      [
+                        455.88457268119896,
+                      ]
+                    }
+                  >
+                    <RNSVGTSpan
+                      content="Identity Chan…"
+                      dx={[]}
+                      dy={[]}
+                      fill={
+                        {
+                          "payload": 4278190080,
+                          "type": 0,
+                        }
+                      }
+                      font={{}}
+                      rotate={[]}
+                      x={[]}
+                      y={[]}
+                    />
+                  </RNSVGText>
+                </RNSVGGroup>
+                <RNSVGGroup
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                >
+                  <RNSVGEllipse
+                    cx={209.99999999999991}
+                    cy={144.11542731880107}
+                    fill={
+                      {
+                        "payload": 4289255632,
+                        "type": 0,
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rx={47.7}
+                    ry={19.080000000000002}
+                  />
+                  <RNSVGText
+                    alignmentBaseline="middle"
+                    content={null}
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4279914576,
+                        "type": 0,
+                      }
+                    }
+                    font={
+                      {
+                        "fontSize": 10,
+                        "fontWeight": "600",
+                        "textAnchor": "middle",
+                      }
+                    }
+                    propList={
+                      [
+                        "fill",
+                      ]
+                    }
+                    rotate={[]}
+                    x={
+                      [
+                        209.99999999999991,
+                      ]
+                    }
+                    y={
+                      [
+                        144.11542731880107,
+                      ]
+                    }
+                  >
+                    <RNSVGTSpan
+                      content="Environment D…"
+                      dx={[]}
+                      dy={[]}
+                      fill={
+                        {
+                          "payload": 4278190080,
+                          "type": 0,
+                        }
+                      }
+                      font={{}}
+                      rotate={[]}
+                      x={[]}
+                      y={[]}
+                    />
+                  </RNSVGText>
+                </RNSVGGroup>
+              </RNSVGGroup>
+            </RNSVGSvgView>
+            <View
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              onClick={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "height": 56.86,
+                  "left": 420.925,
+                  "opacity": 1,
+                  "position": "absolute",
+                  "top": 271.57,
+                  "width": 118.15,
+                }
+              }
+              testID="mindmap-node-n1"
+            />
+            <View
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              onClick={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "height": 55.78,
+                  "left": 152.27500000000006,
+                  "opacity": 1,
+                  "position": "absolute",
+                  "top": 427.994572681199,
+                  "width": 115.45,
+                }
+              }
+              testID="mindmap-node-n2"
+            />
+            <View
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              onClick={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                {
+                  "height": 54.160000000000004,
+                  "left": 154.2999999999999,
+                  "opacity": 1,
+                  "position": "absolute",
+                  "top": 117.03542731880107,
+                  "width": 111.4,
+                }
+              }
+              testID="mindmap-node-n3"
+            />
+          </View>
+        </View>
+      </RCTScrollView>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#fafaf8",
+          "borderTopColor": "#e4dfd6",
+          "borderTopWidth": 1,
+          "flexDirection": "row",
+          "gap": 16,
+          "justifyContent": "center",
+          "paddingHorizontal": 16,
+          "paddingVertical": 12,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 3,
+                "height": 14,
+                "width": 14,
+              },
+              {
+                "backgroundColor": "#c8aaec",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 12,
+              "textTransform": "capitalize",
+            }
+          }
+        >
+          theme
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 3,
+                "height": 14,
+                "width": 14,
+              },
+              {
+                "backgroundColor": "#a8d8d0",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 12,
+              "textTransform": "capitalize",
+            }
+          }
+        >
+          concept
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 3,
+                "height": 14,
+                "width": 14,
+              },
+              {
+                "backgroundColor": "#f5c9a0",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 12,
+              "textTransform": "capitalize",
+            }
+          }
+        >
+          argument
+        </Text>
+      </View>
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 3,
+                "height": 14,
+                "width": 14,
+              },
+              {
+                "backgroundColor": "#f2a8b0",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            {
+              "color": "#78746d",
+              "fontSize": 12,
+              "textTransform": "capitalize",
+            }
+          }
+        >
+          character
+        </Text>
+      </View>
+    </View>
+  </View>
+</Modal>
+`;

@@ -4,7 +4,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from ..indexing.models import Book, BookBlock
@@ -114,12 +114,9 @@ class MindMapService:
                 .join(BookBlock.version)
                 .join(
                     Book,
-                    text("books.active_index_version_id = index_versions.id"),
+                    Book.active_index_version_id == BookBlock.index_version_id,
                 )
-                # Note: text() join is used here because IndexVersion is not directly
-                # importable without circular dependencies. The bindparams approach
-                # prevents SQL injection.
-                .where(text("books.id = :book_id").bindparams(book_id=str(book_id)))
+                .where(Book.id == book_id)
                 .order_by(BookBlock.reading_order)
             ).all()
 

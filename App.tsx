@@ -41,6 +41,7 @@ import { NodeTapSheet } from './src/components/NodeTapSheet';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
+import { resolveMindMapBookId, shouldStartMindMapGeneration } from './src/rag/mindmapTarget';
 import type { MindMapData, MindMapNode, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
 import { requestBookAsk } from './src/rag/bookAskApi';
@@ -3453,7 +3454,7 @@ function ReaderApp() {
     }
   }
 
-  async function openMindMap(bookId: string, bookTitle: string) {
+  async function openMindMap(bookId: string, bookTitle: string, options: { forceGenerate?: boolean } = {}) {
     // Clear any existing poll interval before starting a new one (fix: interval leak on retry)
     if (mindMapPollRef.current) {
       clearInterval(mindMapPollRef.current);
@@ -3462,6 +3463,8 @@ function ReaderApp() {
     // Mark any previous openMindMap call as cancelled (fix: stale async race after close)
     mindMapCancelRef.current = false;
     const cancelled = () => mindMapCancelRef.current;
+    const libraryItem = libraryItems.find((item) => item.id === bookId);
+    const cloudBookId = libraryItem ? resolveMindMapBookId(bookId, libraryItem.wholeBookAi) : null;
 
     // Reset state
     setMindMapBookId(bookId);
@@ -3470,6 +3473,12 @@ function ReaderApp() {
     setMindMapData(null);
     setMindMapError(undefined);
     setMindMapOpen(true);
+
+    if (!cloudBookId) {
+      setMindMapStatus('failed');
+      setMindMapError('Upload this book for Whole-Book AI before generating a mind map.');
+      return;
+    }
 
     try {
       const token = await getAccessToken();
@@ -3483,11 +3492,11 @@ function ReaderApp() {
       }
 
       // Check current status
-      const current = await getMindMap(apiBaseUrl, bookId, token);
+      const current = await getMindMap(apiBaseUrl, cloudBookId, token);
 
       if (cancelled()) return;
 
-      if (current.status === 'ready' || current.status === 'failed' || current.status === 'insufficient_content') {
+      if (!shouldStartMindMapGeneration(current.status, options.forceGenerate ?? false)) {
         setMindMapStatus(current.status);
         setMindMapData(current.data ?? null);
         setMindMapError(current.error);
@@ -3495,7 +3504,7 @@ function ReaderApp() {
       }
 
       // Not ready — trigger generation
-      await generateMindMap(apiBaseUrl, bookId, token);
+      await generateMindMap(apiBaseUrl, cloudBookId, token);
 
       if (cancelled()) return;
 
@@ -3513,7 +3522,7 @@ function ReaderApp() {
           if (!pollToken) {
             return;
           }
-          const poll = await getMindMap(apiBaseUrl, bookId, pollToken);
+          const poll = await getMindMap(apiBaseUrl, cloudBookId, pollToken);
           if (cancelled()) return;
           if (poll.status !== 'generating' && poll.status !== 'pending') {
             clearInterval(mindMapPollRef.current!);
@@ -3775,7 +3784,7 @@ function ReaderApp() {
           onRetry={() => {
             setMindMapStatus('generating');
             setMindMapData(null);
-            void openMindMap(mindMapBookId, mindMapBookTitle);
+            void openMindMap(mindMapBookId, mindMapBookTitle, { forceGenerate: true });
           }}
           onNodeTap={(node) => setTappedNode(node)}
         />
