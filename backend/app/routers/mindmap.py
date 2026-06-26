@@ -7,12 +7,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 
 from ..auth.dependencies import get_current_user
 from ..db.models import User
+from ..indexing.models import Book
 from ..mindmap.consolidator import MindMapConsolidator
 from ..mindmap.extractor import ChapterExtractor
 from ..mindmap.models import MindMapStatus
 from ..mindmap.repository import MindMapRepository
 from ..mindmap.schemas import MindMapStatusResponse
-from ..mindmap.service import MindMapService
+from ..mindmap.service import AlreadyGeneratingError, MindMapService
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +50,11 @@ def generate_mindmap(
         service.initiate(user_id=user.id, book_id=book_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        if str(exc) == "already_generating":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Mind map generation is already in progress.",
-            ) from exc
-        raise
+    except AlreadyGeneratingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mind map generation is already in progress.",
+        ) from exc
 
     background_tasks.add_task(service.generate, user_id=user.id, book_id=book_id)
     return {"status": "generating"}
@@ -69,6 +68,9 @@ def get_mindmap(
 ) -> MindMapStatusResponse:
     factory = request.app.state.session_factory
     with factory() as session:
+        book = session.get(Book, book_id)
+        if book is None or book.user_id != user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found.")
         repo = MindMapRepository(session)
         mindmap = repo.get(book_id)
 

@@ -12,7 +12,7 @@ from backend.app.mindmap.schemas import (
     ExtractedNode,
 )
 from backend.app.mindmap.models import MindMapStatus
-from backend.app.mindmap.service import MindMapService
+from backend.app.mindmap.service import AlreadyGeneratingError, MindMapService
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ class TestInitiate:
         book_id = uuid4()
         mock_book.user_id = user_id
 
-        with pytest.raises(RuntimeError, match="already_generating"):
+        with pytest.raises(AlreadyGeneratingError, match="already_generating"):
             service.initiate(user_id=user_id, book_id=book_id)
 
     def test_raises_when_book_not_found(self):

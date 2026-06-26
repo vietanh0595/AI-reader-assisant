@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 MIN_NODES_REQUIRED = 3
 
 
+class AlreadyGeneratingError(RuntimeError):
+    """Raised when a mind map generation is already in progress for a book."""
+
+
 class MindMapService:
     def __init__(
         self,
@@ -39,7 +43,7 @@ class MindMapService:
                 repo = MindMapRepository(session)
                 existing = repo.get(book_id)
                 if existing and existing.status == MindMapStatus.GENERATING:
-                    raise RuntimeError("already_generating")
+                    raise AlreadyGeneratingError("already_generating")
                 repo.upsert(book_id, MindMapStatus.GENERATING)
 
     def generate(self, user_id: UUID, book_id: UUID) -> None:

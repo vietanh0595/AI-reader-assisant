@@ -11,6 +11,7 @@ from backend.app.auth.dependencies import get_current_user
 from backend.app.config import Settings
 from backend.app.db.models import User
 from backend.app.mindmap.models import MindMap, MindMapStatus
+from backend.app.mindmap.service import AlreadyGeneratingError
 
 
 BOOK_ID = uuid4()
@@ -57,12 +58,13 @@ def test_post_generate_returns_202(client):
     assert response.status_code == 202
     assert response.json() == {"status": "generating"}
     mock_service.initiate.assert_called_once()
+    mock_service.generate.assert_called_once()
 
 
 def test_post_generate_while_generating_returns_409(client):
     """POST /mindmap/generate returns 409 when already generating."""
     mock_service = MagicMock()
-    mock_service.initiate.side_effect = RuntimeError("already_generating")
+    mock_service.initiate.side_effect = AlreadyGeneratingError("already_generating")
 
     with patch("backend.app.routers.mindmap._build_mindmap_service", return_value=mock_service):
         response = client.post(f"/library/books/{BOOK_ID}/mindmap/generate")
@@ -70,20 +72,41 @@ def test_post_generate_while_generating_returns_409(client):
     assert response.status_code == 409
 
 
-def test_get_mindmap_returns_404_when_no_record(client):
-    """GET /mindmap returns 404 when no mindmap record exists."""
-    from backend.app.mindmap.repository import MindMapRepository
+def test_post_generate_returns_404_when_book_not_found(client):
+    """POST /mindmap/generate returns 404 when the book does not exist or belongs to another user."""
+    mock_service = MagicMock()
+    mock_service.initiate.side_effect = ValueError("Book not found")
 
-    with patch.object(MindMapRepository, "get", return_value=None):
+    with patch("backend.app.routers.mindmap._build_mindmap_service", return_value=mock_service):
+        response = client.post(f"/library/books/{BOOK_ID}/mindmap/generate")
+
+    assert response.status_code == 404
+
+
+def _make_fake_book(user_id: UUID, book_id: UUID) -> MagicMock:
+    """Build a minimal fake Book mock with the given ownership."""
+    book = MagicMock()
+    book.id = book_id
+    book.user_id = user_id
+    return book
+
+
+def test_get_mindmap_returns_404_when_no_record(client, fake_user):
+    """GET /mindmap returns 404 when no mindmap record exists."""
+    fake_book = _make_fake_book(user_id=fake_user.id, book_id=BOOK_ID)
+
+    with patch("backend.app.routers.mindmap.MindMapRepository") as mock_repo_cls, \
+         patch("sqlalchemy.orm.Session.get", return_value=fake_book):
+        mock_repo = MagicMock()
+        mock_repo.get.return_value = None
+        mock_repo_cls.return_value = mock_repo
         response = client.get(f"/library/books/{BOOK_ID}/mindmap")
 
     assert response.status_code == 404
 
 
-def test_get_mindmap_returns_200_with_ready_data(client):
+def test_get_mindmap_returns_200_with_ready_data(client, fake_user):
     """GET /mindmap returns 200 with status=ready and data when record exists."""
-    from backend.app.mindmap.repository import MindMapRepository
-
     ready_data = {
         "genre": "non-fiction",
         "nodes": [
@@ -107,7 +130,13 @@ def test_get_mindmap_returns_200_with_ready_data(client):
         error=None,
     )
 
-    with patch.object(MindMapRepository, "get", return_value=fake_mindmap):
+    fake_book = _make_fake_book(user_id=fake_user.id, book_id=BOOK_ID)
+
+    with patch("backend.app.routers.mindmap.MindMapRepository") as mock_repo_cls, \
+         patch("sqlalchemy.orm.Session.get", return_value=fake_book):
+        mock_repo = MagicMock()
+        mock_repo.get.return_value = fake_mindmap
+        mock_repo_cls.return_value = mock_repo
         response = client.get(f"/library/books/{BOOK_ID}/mindmap")
 
     assert response.status_code == 200

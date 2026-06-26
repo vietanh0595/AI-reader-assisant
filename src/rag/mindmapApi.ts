@@ -18,6 +18,7 @@ export async function generateMindMap(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({}),
   });
 
   if (response.status === 409) {
