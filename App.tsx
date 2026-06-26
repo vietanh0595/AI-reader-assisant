@@ -36,8 +36,12 @@ import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { BookSources } from './src/components/BookSources';
 import { ConversationThread } from './src/components/ConversationThread';
+import { MindMapScreen } from './src/components/MindMapScreen';
+import { NodeTapSheet } from './src/components/NodeTapSheet';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
+import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
+import type { MindMapData, MindMapNode, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -2393,6 +2397,16 @@ function ReaderApp() {
   const [editingNote, setEditingNote] = useState<SavedInsight | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [notesCopyFeedback, setNotesCopyFeedback] = useState(false);
+  // Mind map state
+  const [mindMapOpen, setMindMapOpen] = useState(false);
+  const [mindMapBookId, setMindMapBookId] = useState<string | null>(null);
+  const [mindMapBookTitle, setMindMapBookTitle] = useState<string>('');
+  const [mindMapStatus, setMindMapStatus] = useState<MindMapStatus>('pending');
+  const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
+  const [mindMapError, setMindMapError] = useState<string | undefined>(undefined);
+  const [tappedNode, setTappedNode] = useState<MindMapNode | null>(null);
+  const mindMapPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesCopyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3438,6 +3452,66 @@ function ReaderApp() {
     }
   }
 
+  async function openMindMap(bookId: string, bookTitle: string) {
+    // Clear previous state
+    setMindMapBookId(bookId);
+    setMindMapBookTitle(bookTitle);
+    setMindMapData(null);
+    setMindMapError(undefined);
+    setMindMapOpen(true);
+
+    const token = await getAccessToken();
+
+    if (!token) {
+      setMindMapOpen(false);
+      setIsSignInOpen(true);
+      return;
+    }
+
+    // Check current status
+    const current = await getMindMap(apiBaseUrl, bookId, token);
+
+    if (current.status === 'ready' || current.status === 'failed' || current.status === 'insufficient_content') {
+      setMindMapStatus(current.status);
+      setMindMapData(current.data ?? null);
+      setMindMapError(current.error);
+      return;
+    }
+
+    // Not ready — trigger generation
+    await generateMindMap(apiBaseUrl, bookId, token);
+    setMindMapStatus('generating');
+
+    // Poll every 3 seconds
+    mindMapPollRef.current = setInterval(async () => {
+      try {
+        const pollToken = await getAccessToken();
+        if (!pollToken) {
+          return;
+        }
+        const poll = await getMindMap(apiBaseUrl, bookId, pollToken);
+        if (poll.status !== 'generating' && poll.status !== 'pending') {
+          clearInterval(mindMapPollRef.current!);
+          mindMapPollRef.current = null;
+          setMindMapStatus(poll.status);
+          setMindMapData(poll.data ?? null);
+          setMindMapError(poll.error);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, 3000);
+  }
+
+  function closeMindMap() {
+    if (mindMapPollRef.current) {
+      clearInterval(mindMapPollRef.current);
+      mindMapPollRef.current = null;
+    }
+    setMindMapOpen(false);
+    setTappedNode(null);
+  }
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
@@ -3455,6 +3529,7 @@ function ReaderApp() {
               onDismissError={() => setImportError(null)}
               onImportBook={importBook}
               onOpenBook={openLibraryItem}
+              onOpenMindMap={(bookId, bookTitle) => { void openMindMap(bookId, bookTitle); }}
               onScanDocument={scanDocumentPage}
               onSignIn={() => setIsSignInOpen(true)}
               onSignOut={signOut}
@@ -3468,6 +3543,7 @@ function ReaderApp() {
                 isScanningDocument={isScanningDocument}
                 onImportBook={importBook}
                 onOpenLibrary={openLibrary}
+                onOpenMindMap={() => { void openMindMap(activeLibraryItem.id, currentBook.title); }}
                 onScanDocument={scanDocumentPage}
               />
 
@@ -3656,6 +3732,44 @@ function ReaderApp() {
           }}
         />
       ) : null}
+
+      {mindMapOpen && mindMapBookId ? (
+        <MindMapScreen
+          bookTitle={mindMapBookTitle}
+          bookId={mindMapBookId}
+          status={mindMapStatus}
+          data={mindMapData}
+          error={mindMapError}
+          onClose={closeMindMap}
+          onRetry={() => {
+            setMindMapStatus('generating');
+            setMindMapData(null);
+            void openMindMap(mindMapBookId, mindMapBookTitle);
+          }}
+          onNodeTap={(node) => setTappedNode(node)}
+        />
+      ) : null}
+
+      <NodeTapSheet
+        node={tappedNode}
+        bookId={mindMapBookId ?? ''}
+        onClose={() => setTappedNode(null)}
+        onJumpToPassage={(passageId) => {
+          setTappedNode(null);
+          // Jump to the passage in the reader using the paragraph id
+          closeMindMap();
+          setScrollTarget({ nonce: Date.now(), paragraphId: passageId });
+        }}
+        onAsk={(node) => {
+          setTappedNode(null);
+          closeMindMap();
+          // Open the conversation thread with the node label pre-filled as context
+          setAssistError(null);
+          setIsAskOpen(false);
+          setIsThreadCollapsed(false);
+          setIsThreadOpen(true);
+        }}
+      />
     </SafeAreaProvider>
   );
 }
@@ -3679,6 +3793,7 @@ function LibraryScreen({
   onDismissError,
   onImportBook,
   onOpenBook,
+  onOpenMindMap,
   onScanDocument,
   onSignIn,
   onSignOut,
@@ -3694,6 +3809,7 @@ function LibraryScreen({
   onDismissError: () => void;
   onImportBook: () => void;
   onOpenBook: (bookId: string) => void;
+  onOpenMindMap: (bookId: string, bookTitle: string) => void;
   onScanDocument: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -3815,21 +3931,32 @@ function LibraryScreen({
                 <View style={[styles.libraryProgressFill, { width: `${progress.percent}%` }]} />
               </View>
 
-              <Pressable
-                accessibilityLabel={`Resume ${item.book.title}`}
-                accessibilityRole="button"
-                onPress={() => onOpenBook(item.id)}
-                style={({ pressed }) => [
-                  styles.libraryResumeButton,
-                  isActive && styles.libraryResumeButtonActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <BookOpen color={isActive ? colors.white : colors.ink} size={17} strokeWidth={2} />
-                <Text style={[styles.libraryResumeText, isActive && styles.libraryResumeTextActive]}>
-                  {isActive ? 'Resume current' : 'Resume'}
-                </Text>
-              </Pressable>
+              <View style={styles.libraryCardActions}>
+                <Pressable
+                  accessibilityLabel={`Resume ${item.book.title}`}
+                  accessibilityRole="button"
+                  onPress={() => onOpenBook(item.id)}
+                  style={({ pressed }) => [
+                    styles.libraryResumeButton,
+                    styles.libraryResumeButtonFlex,
+                    isActive && styles.libraryResumeButtonActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <BookOpen color={isActive ? colors.white : colors.ink} size={17} strokeWidth={2} />
+                  <Text style={[styles.libraryResumeText, isActive && styles.libraryResumeTextActive]}>
+                    {isActive ? 'Resume current' : 'Resume'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`Mind map for ${item.book.title}`}
+                  accessibilityRole="button"
+                  onPress={() => onOpenMindMap(item.id, item.book.title)}
+                  style={({ pressed }) => [styles.libraryMindMapButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.libraryMindMapText}>🗺 Mind Map</Text>
+                </Pressable>
+              </View>
             </View>
           );
         })}
@@ -4178,6 +4305,7 @@ function ReaderHeader({
   isScanningDocument,
   onImportBook,
   onOpenLibrary,
+  onOpenMindMap,
   onScanDocument,
 }: {
   book: ReaderBook;
@@ -4185,6 +4313,7 @@ function ReaderHeader({
   isScanningDocument: boolean;
   onImportBook: () => void;
   onOpenLibrary: () => void;
+  onOpenMindMap: () => void;
   onScanDocument: () => void;
 }) {
   return (
@@ -4208,6 +4337,14 @@ function ReaderHeader({
       </View>
 
       <View style={styles.headerTools}>
+        <Pressable
+          accessibilityLabel="Mind map"
+          accessibilityRole="button"
+          onPress={onOpenMindMap}
+          style={styles.headerIconButton}
+        >
+          <Text style={styles.headerMindMapIcon}>🗺</Text>
+        </Pressable>
         <Pressable accessibilityLabel="Text settings" accessibilityRole="button" style={styles.headerIconButton}>
           <Type color={colors.ink} size={19} strokeWidth={2} />
         </Pressable>
@@ -5279,7 +5416,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
-    marginTop: 13,
     minHeight: 38,
     paddingHorizontal: 12,
   },
@@ -5295,6 +5431,32 @@ const styles = StyleSheet.create({
   },
   libraryResumeTextActive: {
     color: colors.white,
+  },
+  libraryResumeButtonFlex: {
+    flex: 1,
+  },
+  libraryCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 13,
+  },
+  libraryMindMapButton: {
+    alignItems: 'center',
+    borderColor: '#cfc8bb',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  libraryMindMapText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  headerMindMapIcon: {
+    fontSize: 19,
   },
   webView: {
     backgroundColor: colors.paper,
