@@ -89,6 +89,8 @@ def app_settings() -> Settings:
         rag_rrf_k=60,
         rag_min_vector_similarity=0.35,
         rag_context_max_chars=18_000,
+        mindmap_extraction_model="gpt-4o-mini",
+        mindmap_consolidation_model="gpt-4o",
     )
 
 

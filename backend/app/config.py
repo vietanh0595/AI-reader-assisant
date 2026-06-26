@@ -20,6 +20,8 @@ DEFAULT_RAG_FUSED_CANDIDATES = 8
 DEFAULT_RAG_RRF_K = 60
 DEFAULT_RAG_MIN_VECTOR_SIMILARITY = 0.20
 DEFAULT_RAG_CONTEXT_MAX_CHARS = 18_000
+DEFAULT_MINDMAP_EXTRACTION_MODEL = "gpt-4o-mini"
+DEFAULT_MINDMAP_CONSOLIDATION_MODEL = "gpt-4o"
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_DIR.parent
 
@@ -49,6 +51,8 @@ class Settings:
     rag_rrf_k: int
     rag_min_vector_similarity: float
     rag_context_max_chars: int
+    mindmap_extraction_model: str
+    mindmap_consolidation_model: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,6 +75,8 @@ class Settings:
             rag_rrf_k=int(os.getenv("RAG_RRF_K", str(DEFAULT_RAG_RRF_K))),
             rag_min_vector_similarity=float(os.getenv("RAG_MIN_VECTOR_SIMILARITY", str(DEFAULT_RAG_MIN_VECTOR_SIMILARITY))),
             rag_context_max_chars=int(os.getenv("RAG_CONTEXT_MAX_CHARS", str(DEFAULT_RAG_CONTEXT_MAX_CHARS))),
+            mindmap_extraction_model=os.getenv("MINDMAP_EXTRACTION_MODEL", DEFAULT_MINDMAP_EXTRACTION_MODEL).strip() or DEFAULT_MINDMAP_EXTRACTION_MODEL,
+            mindmap_consolidation_model=os.getenv("MINDMAP_CONSOLIDATION_MODEL", DEFAULT_MINDMAP_CONSOLIDATION_MODEL).strip() or DEFAULT_MINDMAP_CONSOLIDATION_MODEL,
         )
 
     def require_openai_api_key(self) -> str:
