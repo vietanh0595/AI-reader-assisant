@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,11 +22,11 @@ class MindMapStatus(str, Enum):
 
 class MindMap(UuidTimestampMixin, Base):
     __tablename__ = "mindmaps"
+    __table_args__ = (UniqueConstraint("book_id", name="uq_mindmaps_book_id"),)
 
     book_id: Mapped[UUID] = mapped_column(
         ForeignKey("books.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     status: Mapped[str] = mapped_column(String(30), nullable=False, default=MindMapStatus.PENDING)
     data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
