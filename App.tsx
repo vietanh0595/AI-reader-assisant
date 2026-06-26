@@ -2406,6 +2406,7 @@ function ReaderApp() {
   const [mindMapError, setMindMapError] = useState<string | undefined>(undefined);
   const [tappedNode, setTappedNode] = useState<MindMapNode | null>(null);
   const mindMapPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mindMapCancelRef = useRef(false);
 
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3453,57 +3454,87 @@ function ReaderApp() {
   }
 
   async function openMindMap(bookId: string, bookTitle: string) {
-    // Clear previous state
+    // Clear any existing poll interval before starting a new one (fix: interval leak on retry)
+    if (mindMapPollRef.current) {
+      clearInterval(mindMapPollRef.current);
+      mindMapPollRef.current = null;
+    }
+    // Mark any previous openMindMap call as cancelled (fix: stale async race after close)
+    mindMapCancelRef.current = false;
+    const cancelled = () => mindMapCancelRef.current;
+
+    // Reset state
     setMindMapBookId(bookId);
     setMindMapBookTitle(bookTitle);
+    setMindMapStatus('pending');
     setMindMapData(null);
     setMindMapError(undefined);
     setMindMapOpen(true);
 
-    const token = await getAccessToken();
+    try {
+      const token = await getAccessToken();
 
-    if (!token) {
-      setMindMapOpen(false);
-      setIsSignInOpen(true);
-      return;
-    }
+      if (cancelled()) return;
 
-    // Check current status
-    const current = await getMindMap(apiBaseUrl, bookId, token);
+      if (!token) {
+        setMindMapOpen(false);
+        setIsSignInOpen(true);
+        return;
+      }
 
-    if (current.status === 'ready' || current.status === 'failed' || current.status === 'insufficient_content') {
-      setMindMapStatus(current.status);
-      setMindMapData(current.data ?? null);
-      setMindMapError(current.error);
-      return;
-    }
+      // Check current status
+      const current = await getMindMap(apiBaseUrl, bookId, token);
 
-    // Not ready — trigger generation
-    await generateMindMap(apiBaseUrl, bookId, token);
-    setMindMapStatus('generating');
+      if (cancelled()) return;
 
-    // Poll every 3 seconds
-    mindMapPollRef.current = setInterval(async () => {
-      try {
-        const pollToken = await getAccessToken();
-        if (!pollToken) {
-          return;
-        }
-        const poll = await getMindMap(apiBaseUrl, bookId, pollToken);
-        if (poll.status !== 'generating' && poll.status !== 'pending') {
+      if (current.status === 'ready' || current.status === 'failed' || current.status === 'insufficient_content') {
+        setMindMapStatus(current.status);
+        setMindMapData(current.data ?? null);
+        setMindMapError(current.error);
+        return;
+      }
+
+      // Not ready — trigger generation
+      await generateMindMap(apiBaseUrl, bookId, token);
+
+      if (cancelled()) return;
+
+      setMindMapStatus('generating');
+
+      // Poll every 3 seconds
+      mindMapPollRef.current = setInterval(async () => {
+        if (cancelled()) {
           clearInterval(mindMapPollRef.current!);
           mindMapPollRef.current = null;
-          setMindMapStatus(poll.status);
-          setMindMapData(poll.data ?? null);
-          setMindMapError(poll.error);
+          return;
         }
-      } catch {
-        // ignore poll errors
-      }
-    }, 3000);
+        try {
+          const pollToken = await getAccessToken();
+          if (!pollToken) {
+            return;
+          }
+          const poll = await getMindMap(apiBaseUrl, bookId, pollToken);
+          if (cancelled()) return;
+          if (poll.status !== 'generating' && poll.status !== 'pending') {
+            clearInterval(mindMapPollRef.current!);
+            mindMapPollRef.current = null;
+            setMindMapStatus(poll.status);
+            setMindMapData(poll.data ?? null);
+            setMindMapError(poll.error);
+          }
+        } catch {
+          // ignore poll errors
+        }
+      }, 3000);
+    } catch (err) {
+      if (cancelled()) return;
+      setMindMapStatus('failed');
+      setMindMapError(err instanceof Error ? err.message : 'Failed to load mind map');
+    }
   }
 
   function closeMindMap() {
+    mindMapCancelRef.current = true; // cancel any in-flight openMindMap async body
     if (mindMapPollRef.current) {
       clearInterval(mindMapPollRef.current);
       mindMapPollRef.current = null;
@@ -3763,11 +3794,8 @@ function ReaderApp() {
         onAsk={(node) => {
           setTappedNode(null);
           closeMindMap();
-          // Open the conversation thread with the node label pre-filled as context
-          setAssistError(null);
-          setIsAskOpen(false);
-          setIsThreadCollapsed(false);
-          setIsThreadOpen(true);
+          // Use the proper guard that checks indexing status before opening the thread
+          openConversationThread();
         }}
       />
     </SafeAreaProvider>
