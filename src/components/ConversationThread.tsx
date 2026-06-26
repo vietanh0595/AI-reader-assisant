@@ -47,7 +47,7 @@ export function ConversationThread({
   onClose,
 }: ConversationThreadProps) {
   const [draft, setDraft] = useState('');
-  const [quotedText, setQuotedText] = useState<string | undefined>(undefined);
+  const [quotedText, setQuotedText] = useState<string | undefined>(selectedText);
   const [quotedTurnId, setQuotedTurnId] = useState<string | undefined>(undefined);
   const [menuTurn, setMenuTurn] = useState<ConversationTurn | null>(null);
   const [userMenuTurn, setUserMenuTurn] = useState<ConversationTurn | null>(null);
