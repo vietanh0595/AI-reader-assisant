@@ -41,3 +41,73 @@ def test_consolidation_result_requires_genre():
         edges=[],
     )
     assert result.genre == "non-fiction"
+
+
+from unittest.mock import MagicMock, patch
+from backend.app.mindmap.extractor import ChapterExtractor
+
+
+FIXTURE_CHAPTER = """
+Chapter 1: The Fundamentals of Habit Formation
+
+Habits are the compound interest of self-improvement. Getting one percent better every day
+counts for a lot in the long run. The habit loop consists of a cue, a craving, a response,
+and a reward. Understanding these four components is the key to building better habits
+and breaking bad ones.
+"""
+
+FIXTURE_EXTRACTION = ChapterExtractionResult(
+    genre="non-fiction",
+    nodes=[
+        ExtractedNode(
+            id="n1",
+            label="Habit Loop",
+            type="concept",
+            summary="The four-step pattern: cue, craving, response, reward.",
+            importance=0.95,
+            paragraph_ids=["p1"],
+        ),
+    ],
+    edges=[],
+)
+
+
+def test_extractor_returns_chapter_extraction_result():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.output_parsed = FIXTURE_EXTRACTION
+    mock_client.responses.parse.return_value = mock_response
+
+    extractor = ChapterExtractor(client=mock_client, model="gpt-4o-mini")
+    result = extractor.extract(
+        chapter_text=FIXTURE_CHAPTER,
+        chapter_id="ch1",
+        chapter_title="The Fundamentals",
+        paragraph_ids=["p1"],
+        is_first_chapter=True,
+    )
+
+    assert result.genre == "non-fiction"
+    assert result.nodes[0].label == "Habit Loop"
+    mock_client.responses.parse.assert_called_once()
+
+
+def test_extractor_skips_genre_on_non_first_chapter():
+    mock_client = MagicMock()
+    fixture_no_genre = ChapterExtractionResult(nodes=[], edges=[], genre=None)
+    mock_response = MagicMock()
+    mock_response.output_parsed = fixture_no_genre
+    mock_client.responses.parse.return_value = mock_response
+
+    extractor = ChapterExtractor(client=mock_client, model="gpt-4o-mini")
+    result = extractor.extract(
+        chapter_text="Some text.",
+        chapter_id="ch2",
+        chapter_title="Chapter 2",
+        paragraph_ids=["p5"],
+        is_first_chapter=False,
+    )
+
+    assert result.genre is None
+    call_kwargs = mock_client.responses.parse.call_args[1]
+    assert "genre" not in call_kwargs["instructions"] or "chapter 1" in call_kwargs["instructions"].lower()
