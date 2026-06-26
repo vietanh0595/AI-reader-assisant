@@ -8,17 +8,22 @@ from pydantic import BaseModel, ConfigDict, Field
 # --- OpenAI structured-output models ---
 
 class ExtractedNode(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     label: str = Field(max_length=120)
     type: Literal["theme", "concept", "argument", "character"]
     summary: str = Field(max_length=400)
     importance: float = Field(ge=0.0, le=1.0)
-    paragraph_ids: list[str]
+    paragraph_ids: list[str] = Field(serialization_alias="passage_ids")
+    chapter: Optional[int] = None  # chapter index (1-based), None = whole-book node
 
 
 class ExtractedEdge(BaseModel):
-    from_id: str
-    to_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_id: str = Field(serialization_alias="from")
+    to_id: str = Field(serialization_alias="to")
     label: str = Field(max_length=60)
 
 

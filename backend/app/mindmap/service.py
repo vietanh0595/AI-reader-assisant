@@ -77,10 +77,12 @@ class MindMapService:
                     detected_genre = result.genre
                 chapter_results.append(result)
             except Exception:
-                logger.warning("Extraction failed for chapter %s, skipping", chapter_id)
+                logger.warning("Extraction failed for chapter %s, skipping", chapter_id, exc_info=True)
 
         if not chapter_results:
-            self._store_result(book_id, MindMapStatus.INSUFFICIENT_CONTENT, data=None)
+            with self._factory() as session:
+                with session.begin():
+                    MindMapRepository(session).set_failed(book_id, "All chapter extractions failed")
             return
 
         consolidated = self._consolidator.consolidate(
@@ -94,8 +96,8 @@ class MindMapService:
 
         data: dict[str, Any] = {
             "genre": consolidated.genre,
-            "nodes": [n.model_dump() for n in consolidated.nodes],
-            "edges": [e.model_dump() for e in consolidated.edges],
+            "nodes": [n.model_dump(by_alias=True) for n in consolidated.nodes],
+            "edges": [e.model_dump(by_alias=True) for e in consolidated.edges],
         }
         self._store_result(book_id, MindMapStatus.READY, data=data)
 
@@ -110,7 +112,10 @@ class MindMapService:
                     Book,
                     text("books.active_index_version_id = index_versions.id"),
                 )
-                .where(text(f"books.id = '{book_id}'"))
+                # Note: text() join is used here because IndexVersion is not directly
+                # importable without circular dependencies. The bindparams approach
+                # prevents SQL injection.
+                .where(text("books.id = :book_id").bindparams(book_id=str(book_id)))
                 .order_by(BookBlock.reading_order)
             ).all()
 

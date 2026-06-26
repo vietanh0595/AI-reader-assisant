@@ -110,4 +110,4 @@ def test_extractor_skips_genre_on_non_first_chapter():
 
     assert result.genre is None
     call_kwargs = mock_client.responses.parse.call_args[1]
-    assert "genre" not in call_kwargs["instructions"] or "chapter 1" in call_kwargs["instructions"].lower()
+    assert "Also detect the book" not in call_kwargs["instructions"]
