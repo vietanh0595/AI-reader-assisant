@@ -57,7 +57,7 @@ export function NodeTapSheet({
         bounciness: 4,
       }).start();
     }
-  }, [node, translateY]);
+  }, [node]);
 
   if (node === null) {
     return null;
@@ -75,7 +75,7 @@ export function NodeTapSheet({
     >
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={onClose} accessibilityLabel="Dismiss">
-        <View style={styles.backdrop} />
+        <View style={styles.backdrop} testID="nodeTapSheet-backdrop" />
       </TouchableWithoutFeedback>
 
       {/* Sheet */}

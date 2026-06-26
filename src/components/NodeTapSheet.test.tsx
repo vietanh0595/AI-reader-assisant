@@ -64,3 +64,22 @@ test("calls onJumpToPassage when a passage row is tapped", async () => {
   expect(onJumpToPassage).toHaveBeenCalledTimes(1);
   expect(onJumpToPassage).toHaveBeenCalledWith("p1");
 });
+
+test("calls onClose when backdrop is pressed", async () => {
+  const onClose = jest.fn();
+  const { getByTestId } = await render(
+    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={onClose} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />,
+  );
+  fireEvent.press(getByTestId("nodeTapSheet-backdrop"));
+  expect(onClose).toHaveBeenCalled();
+});
+
+test("updates content when node changes", async () => {
+  const OTHER_NODE: MindMapNode = { ...FIXTURE_NODE, id: "n2", label: "Identity Change", type: "theme" };
+  const { getByText, rerender } = await render(
+    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />,
+  );
+  expect(getByText("Habit Loop")).toBeTruthy();
+  await rerender(<NodeTapSheet node={OTHER_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />);
+  expect(getByText("Identity Change")).toBeTruthy();
+});

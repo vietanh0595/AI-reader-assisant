@@ -180,7 +180,7 @@ function NodeShape({
     const rx = 45 * scale;
     const ry = 18 * scale;
     return (
-      <G onPress={onTap}>
+      <G onPress={onTap} testID={`mindmap-node-${node.id}`}>
         <Ellipse cx={x} cy={y} rx={rx} ry={ry} fill={fill} />
         <SvgText
           x={x}
@@ -199,7 +199,7 @@ function NodeShape({
 
   // Branch node: rounded rect
   return (
-    <G onPress={onTap}>
+    <G onPress={onTap} testID={`mindmap-node-${node.id}`}>
       <Rect
         x={x - w / 2}
         y={y - h / 2}
@@ -236,7 +236,7 @@ export function MindMapScreen({
   onRetry,
   onNodeTap,
 }: MindMapScreenProps) {
-  const layout = useMemo(() => {
+  const layout = useMemo<ComputedLayout | null>(() => {
     if (!data) return null;
     return computeLayout(data);
   }, [data]);
@@ -295,87 +295,94 @@ export function MindMapScreen({
           )}
 
           {status === "ready" && layout ? (
-            <ScrollView
-              contentContainerStyle={styles.svgContainer}
-              maximumZoomScale={3}
-              minimumZoomScale={0.5}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-            >
-              <Svg width={SVG_WIDTH} height={SVG_HEIGHT} viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}>
-                <Defs>
-                  <Marker
-                    id="arrowhead"
-                    markerWidth={8}
-                    markerHeight={6}
-                    refX={8}
-                    refY={3}
-                    orient="auto"
-                  >
-                    <Polygon points="0 0, 8 3, 0 6" fill="#888" />
-                  </Marker>
-                </Defs>
+            layout.nodes.length === 0 ? (
+              <View style={styles.centered}>
+                <Text style={styles.emptyTitle}>No concepts extracted</Text>
+                <Text style={styles.emptySubtitle}>The mind map was generated but contains no nodes.</Text>
+              </View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={styles.svgContainer}
+                maximumZoomScale={3}
+                minimumZoomScale={0.5}
+                showsHorizontalScrollIndicator={false}
+                showsVerticalScrollIndicator={false}
+              >
+                <Svg width={SVG_WIDTH} height={SVG_HEIGHT} viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}>
+                  <Defs>
+                    <Marker
+                      id="arrowhead"
+                      markerWidth={8}
+                      markerHeight={6}
+                      refX={8}
+                      refY={3}
+                      orient="auto"
+                    >
+                      <Polygon points="0 0, 8 3, 0 6" fill="#888" />
+                    </Marker>
+                  </Defs>
 
-                {/* Edges first (below nodes) */}
-                {layout.edges.map((le, i) => (
-                  <EdgePath
-                    key={i}
-                    x1={le.x1}
-                    y1={le.y1}
-                    x2={le.x2}
-                    y2={le.y2}
-                  />
-                ))}
+                  {/* Edges first (below nodes) */}
+                  {layout.edges.map((le, i) => (
+                    <EdgePath
+                      key={i}
+                      x1={le.x1}
+                      y1={le.y1}
+                      x2={le.x2}
+                      y2={le.y2}
+                    />
+                  ))}
 
-                {/* Center node */}
-                <G>
-                  <Rect
-                    x={CX - CENTER_WIDTH / 2}
-                    y={CY - CENTER_HEIGHT / 2}
-                    width={CENTER_WIDTH}
-                    height={CENTER_HEIGHT}
-                    rx={10}
-                    ry={10}
-                    fill={CENTER_NODE_COLOR}
-                  />
-                  <SvgText
-                    x={CX}
-                    y={CY}
-                    textAnchor="middle"
-                    alignmentBaseline="middle"
-                    fontSize={11}
-                    fill={CENTER_NODE_TEXT}
-                    fontWeight="700"
-                  >
-                    {bookTitle.length > 16 ? bookTitle.slice(0, 15) + "…" : bookTitle}
-                  </SvgText>
-                  {data?.genre ? (
+                  {/* Center node */}
+                  <G>
+                    <Rect
+                      x={CX - CENTER_WIDTH / 2}
+                      y={CY - CENTER_HEIGHT / 2}
+                      width={CENTER_WIDTH}
+                      height={CENTER_HEIGHT}
+                      rx={10}
+                      ry={10}
+                      fill={CENTER_NODE_COLOR}
+                    />
                     <SvgText
                       x={CX}
-                      y={CY + 14}
+                      y={CY}
                       textAnchor="middle"
                       alignmentBaseline="middle"
-                      fontSize={9}
-                      fill="rgba(255,255,255,0.7)"
+                      fontSize={11}
+                      fill={CENTER_NODE_TEXT}
+                      fontWeight="700"
                     >
-                      {data.genre}
+                      {bookTitle.length > 16 ? bookTitle.slice(0, 15) + "…" : bookTitle}
                     </SvgText>
-                  ) : null}
-                </G>
+                    {data?.genre ? (
+                      <SvgText
+                        x={CX}
+                        y={CY + 14}
+                        textAnchor="middle"
+                        alignmentBaseline="middle"
+                        fontSize={9}
+                        fill="rgba(255,255,255,0.7)"
+                      >
+                        {data.genre}
+                      </SvgText>
+                    ) : null}
+                  </G>
 
-                {/* Leaf / branch nodes */}
-                {layout.nodes.map((ln) => (
-                  <NodeShape
-                    key={ln.node.id}
-                    node={ln.node}
-                    x={ln.x}
-                    y={ln.y}
-                    isLeaf={ln.isLeaf}
-                    onTap={() => onNodeTap(ln.node)}
-                  />
-                ))}
-              </Svg>
-            </ScrollView>
+                  {/* Leaf / branch nodes */}
+                  {layout.nodes.map((ln) => (
+                    <NodeShape
+                      key={ln.node.id}
+                      node={ln.node}
+                      x={ln.x}
+                      y={ln.y}
+                      isLeaf={ln.isLeaf}
+                      onTap={() => onNodeTap(ln.node)}
+                    />
+                  ))}
+                </Svg>
+              </ScrollView>
+            )
           ) : null}
         </View>
 
@@ -473,6 +480,23 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#78746d",
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: "#a8a298",
+    textAlign: "center",
   },
   svgContainer: {
     alignItems: "center",

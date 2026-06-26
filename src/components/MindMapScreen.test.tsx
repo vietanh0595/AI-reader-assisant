@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 import { MindMapScreen } from "./MindMapScreen";
 import { MindMapData } from "../rag/mindmapTypes";
 
@@ -45,6 +45,12 @@ const baseProps = {
   onClose: jest.fn(),
   onRetry: jest.fn(),
   onNodeTap: jest.fn(),
+};
+
+const READY_PROPS = {
+  ...baseProps,
+  status: "ready" as const,
+  data: FIXTURE_DATA,
 };
 
 test("rendering: generating state shows spinner and label", async () => {
@@ -95,4 +101,28 @@ test("rendering: ready state renders SVG with node labels", async () => {
   // SVG node label text is rendered inside RNSVGText which is not queryable
   // via getByText — verify the full tree via snapshot instead
   expect(toJSON()).toMatchSnapshot();
+});
+
+test("calls onNodeTap when a node is pressed", async () => {
+  const onNodeTap = jest.fn();
+  const { getByTestId } = await render(
+    <MindMapScreen {...READY_PROPS} onNodeTap={onNodeTap} />,
+  );
+  fireEvent.press(getByTestId("mindmap-node-n1"));
+  expect(onNodeTap).toHaveBeenCalledWith(FIXTURE_DATA.nodes[0]);
+});
+
+test("shows empty state when ready but no nodes", async () => {
+  const { getByText } = await render(
+    <MindMapScreen
+      bookTitle="Test Book"
+      bookId="b1"
+      status="ready"
+      data={{ genre: "non-fiction", nodes: [], edges: [] }}
+      onClose={jest.fn()}
+      onRetry={jest.fn()}
+      onNodeTap={jest.fn()}
+    />,
+  );
+  expect(getByText(/no concepts extracted/i)).toBeTruthy();
 });
