@@ -12,12 +12,14 @@ import {
 import { ReactNativeZoomableView } from "@openspacelabs/react-native-zoomable-view";
 import Svg, { Defs, Marker, Path, Polygon } from "react-native-svg";
 import {
+  MindMapChapter,
   MindMapData,
   MindMapNode,
   MindMapNodeType,
   MindMapStatus,
 } from "../rag/mindmapTypes";
 import { NodeTapSheet } from "./NodeTapSheet";
+import { ChapterTapSheet } from "./ChapterTapSheet";
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
@@ -43,9 +45,9 @@ const MAX_ZOOM = 3.5;
 // screen) with generous, absolute spacing so nodes never overlap. The canvas is
 // wrapped in <ReactNativeZoomableView>, which handles all pan/zoom/centering.
 
-const R1 = 178; // inner ring radius — wide enough to space 8 L1 nodes
-const R2 = 293; // outer ring radius (R1 + radial gap for L2)
-const L2_REACH = 56; // half-extent of an L2 node beyond its centre
+const R1 = 178; // inner ring radius — wide enough to space 8 nodes
+const R2 = 293; // outer ring radius (R1 + radial gap)
+const L2_REACH = 56; // half-extent of an outer node beyond its centre
 const CANVAS_PAD = 30;
 const CANVAS_SIZE = (R2 + L2_REACH + CANVAS_PAD) * 2; // ≈ 758
 
@@ -96,6 +98,8 @@ interface ComputedLayout {
   l2Nodes: LayoutNode[];
 }
 
+type CanvasVariant = "tree" | "hub";
+
 export interface MindMapScreenProps {
   bookTitle: string;
   bookId: string;
@@ -110,18 +114,18 @@ export interface MindMapScreenProps {
 
 // ─── Layout computation ───────────────────────────────────────────────────────
 
+// "tree" layout: importance-ranked inner ring (L1) + outer branches (L2),
+// used for concept maps where edges express L1→L2 relationships.
 function computeLayout(data: MindMapData, g: Geometry): ComputedLayout {
   const { nodes, edges } = data;
   if (nodes.length === 0) return { l1Nodes: [], l2Nodes: [] };
 
-  // Sort by importance descending; top ~55% → L1, remainder → L2
   const sorted = [...nodes].sort((a, b) => b.importance - a.importance);
   const l1Count = Math.min(8, Math.max(3, Math.ceil(sorted.length * 0.55)));
   const l1Nodes = sorted.slice(0, l1Count);
   const l2Nodes = sorted.slice(l1Count);
   const l1Ids = new Set(l1Nodes.map((n) => n.id));
 
-  // Find an L1 parent for each L2 node via the edge list
   const parentMap = new Map<string, string>();
   for (const e of edges) {
     if (l1Ids.has(e.from) && !l1Ids.has(e.to) && !parentMap.has(e.to)) {
@@ -133,7 +137,6 @@ function computeLayout(data: MindMapData, g: Geometry): ComputedLayout {
     if (!parentMap.has(n.id)) parentMap.set(n.id, fallback);
   }
 
-  // Position L1 nodes evenly around the inner ring (start at top)
   const l1AngleMap = new Map<string, number>();
   const l1Layout: LayoutNode[] = l1Nodes.map((node, i) => {
     const angle = (i / l1Nodes.length) * 2 * Math.PI - Math.PI / 2;
@@ -147,7 +150,6 @@ function computeLayout(data: MindMapData, g: Geometry): ComputedLayout {
     };
   });
 
-  // Group L2 nodes under their parent and fan them around the parent angle
   const byParent = new Map<string, MindMapNode[]>();
   for (const n of l2Nodes) {
     const pid = parentMap.get(n.id) ?? fallback;
@@ -176,6 +178,58 @@ function computeLayout(data: MindMapData, g: Geometry): ComputedLayout {
   }
 
   return { l1Nodes: l1Layout, l2Nodes: l2Layout };
+}
+
+// "hub" layout: every node is a spoke off the centre (no L1→L2 branches), used
+// for the chapters overview where chapters are siblings, not a hierarchy.
+function computeHubLayout(data: MindMapData, g: Geometry): ComputedLayout {
+  const nodes = data.nodes;
+  if (nodes.length === 0) return { l1Nodes: [], l2Nodes: [] };
+
+  const innerCount =
+    nodes.length <= 8 ? nodes.length : Math.ceil(nodes.length / 2);
+  const inner = nodes.slice(0, innerCount);
+  const outer = nodes.slice(innerCount);
+
+  const place = (
+    list: MindMapNode[],
+    radius: number,
+    level: 1 | 2,
+    angleOffset: number
+  ): LayoutNode[] =>
+    list.map((node, i) => {
+      const angle = (i / list.length) * 2 * Math.PI - Math.PI / 2 + angleOffset;
+      return {
+        node,
+        x: g.cx + radius * Math.cos(angle),
+        y: g.cy + radius * Math.sin(angle),
+        level,
+        parentId: null,
+      };
+    });
+
+  return {
+    l1Nodes: place(inner, g.r1, 1, 0),
+    l2Nodes: place(outer, g.r2, 2, outer.length ? Math.PI / outer.length : 0),
+  };
+}
+
+// Build a synthetic concept-graph where each chapter is a single node, for the
+// chapters overview (rendered with the "hub" variant).
+function chaptersToData(chapters: MindMapChapter[], genre: string): MindMapData {
+  return {
+    genre,
+    edges: [],
+    nodes: chapters.map((c) => ({
+      id: c.id,
+      label: c.title ?? `Chapter ${c.index}`,
+      type: "theme" as MindMapNodeType,
+      summary: c.summary ?? "",
+      importance: 0.8,
+      passage_ids: c.jump_paragraph_id ? [c.jump_paragraph_id] : [],
+      chapter: c.index,
+    })),
+  };
 }
 
 // ─── SVG edge helpers (curved connectors, pointerEvents disabled) ─────────────
@@ -248,6 +302,162 @@ function NodeView({
   );
 }
 
+// ─── Reusable radial canvas ───────────────────────────────────────────────────
+
+function MindMapCanvas({
+  data,
+  variant,
+  centerLabel,
+  centerSubLabel,
+  onNodeTap,
+}: {
+  data: MindMapData;
+  variant: CanvasVariant;
+  centerLabel: string;
+  centerSubLabel?: string | null;
+  onNodeTap: (node: MindMapNode) => void;
+}) {
+  const { width: screenW } = useWindowDimensions();
+  const geometry = GEOMETRY;
+  const size = geometry.size;
+
+  const layout = useMemo<ComputedLayout>(
+    () =>
+      variant === "hub"
+        ? computeHubLayout(data, geometry)
+        : computeLayout(data, geometry),
+    [data, geometry, variant]
+  );
+
+  const mapWidth = geometry.r2 * 2 + geometry.l2W;
+  const initialZoom = clampN((screenW * 0.9) / mapWidth, MIN_ZOOM, 1);
+
+  if (layout.l1Nodes.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.emptyTitle}>Nothing to show</Text>
+        <Text style={styles.emptySubtitle}>This view has no nodes.</Text>
+      </View>
+    );
+  }
+
+  // In "hub" mode every node spokes off the centre; in "tree" mode only L1 does.
+  const spokeNodes =
+    variant === "hub" ? [...layout.l1Nodes, ...layout.l2Nodes] : layout.l1Nodes;
+
+  return (
+    <ReactNativeZoomableView
+      key={variant + centerLabel}
+      // Size the zoom subject to the content so it centres on the map centre
+      // (this style lands on the inner transformed view).
+      style={{ width: size, height: size }}
+      contentWidth={size}
+      contentHeight={size}
+      initialZoom={initialZoom}
+      minZoom={MIN_ZOOM}
+      maxZoom={MAX_ZOOM}
+      // A square map can't fill a portrait viewport without clipping, so don't
+      // bind to borders — let it sit fully visible and pan free.
+      bindToBorders={false}
+      doubleTapZoomToCenter={false}
+      visualTouchFeedbackEnabled={false}
+    >
+      <View style={{ width: size, height: size }}>
+        <Svg
+          width={size}
+          height={size}
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+        >
+          <Defs>
+            <Marker
+              id="arr"
+              markerWidth={7}
+              markerHeight={5}
+              refX={7}
+              refY={2.5}
+              orient="auto"
+            >
+              <Polygon points="0 0, 7 2.5, 0 5" fill="#c4bdb5" />
+            </Marker>
+          </Defs>
+
+          {/* L1 → L2 dashed branches (tree variant only) */}
+          {variant === "tree" &&
+            layout.l2Nodes.map((l2, i) => {
+              const parent = layout.l1Nodes.find(
+                (l1) => l1.node.id === l2.parentId
+              );
+              if (!parent) return null;
+              return (
+                <Path
+                  key={`br-${i}`}
+                  d={branchPath(parent.x, parent.y, l2.x, l2.y)}
+                  stroke="#d8d2cc"
+                  strokeWidth={1.2}
+                  strokeDasharray="5,3"
+                  fill="none"
+                />
+              );
+            })}
+
+          {/* Center → node spokes */}
+          {spokeNodes.map((ln, i) => (
+            <Path
+              key={`sp-${i}`}
+              d={spokePath(geometry.cx, geometry.cy, ln.x, ln.y)}
+              stroke="#c4bdb5"
+              strokeWidth={1.8}
+              fill="none"
+              markerEnd="url(#arr)"
+            />
+          ))}
+        </Svg>
+
+        {/* Center node (native, not pressable) */}
+        <View
+          style={[
+            styles.centerNode,
+            {
+              left: geometry.cx - geometry.centerW / 2,
+              top: geometry.cy - geometry.centerH / 2,
+              width: geometry.centerW,
+              minHeight: geometry.centerH,
+            },
+          ]}
+        >
+          <Text style={styles.centerTitle} numberOfLines={2}>
+            {centerLabel}
+          </Text>
+          {centerSubLabel ? (
+            <Text style={styles.centerGenre} numberOfLines={1}>
+              {centerSubLabel}
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Outer nodes first so inner nodes sit above when they meet */}
+        {layout.l2Nodes.map((ln) => (
+          <NodeView
+            key={ln.node.id}
+            ln={ln}
+            geometry={geometry}
+            onPress={() => onNodeTap(ln.node)}
+          />
+        ))}
+        {layout.l1Nodes.map((ln) => (
+          <NodeView
+            key={ln.node.id}
+            ln={ln}
+            geometry={geometry}
+            onPress={() => onNodeTap(ln.node)}
+          />
+        ))}
+      </View>
+    </ReactNativeZoomableView>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function MindMapScreen({
@@ -261,20 +471,30 @@ export function MindMapScreen({
   onJumpToPassage,
   onAsk,
 }: MindMapScreenProps) {
-  const { width: screenW } = useWindowDimensions();
-  const geometry = GEOMETRY;
-  const size = geometry.size;
+  const [tab, setTab] = useState<"concepts" | "chapters">("concepts");
+  const [openChapter, setOpenChapter] = useState<MindMapChapter | null>(null);
   const [selectedNode, setSelectedNode] = useState<MindMapNode | null>(null);
+  const [selectedChapter, setSelectedChapter] = useState<MindMapChapter | null>(
+    null
+  );
 
-  const layout = useMemo<ComputedLayout | null>(() => {
-    if (!data) return null;
-    return computeLayout(data, geometry);
-  }, [data, geometry]);
+  const chapters = data?.chapters ?? [];
+  const hasChapters = chapters.length > 0;
+  const genre = data?.genre ?? "";
 
-  // Start zoomed so the whole map (its widest ring) fits the screen width with
-  // a margin; the user can pinch in/out and pan freely from there.
-  const mapWidth = geometry.r2 * 2 + geometry.l2W;
-  const initialZoom = clampN((screenW * 0.9) / mapWidth, MIN_ZOOM, 1);
+  const chaptersData = useMemo(
+    () => (hasChapters ? chaptersToData(chapters, genre) : null),
+    [chapters, hasChapters, genre]
+  );
+
+  const goToTab = (next: "concepts" | "chapters") => {
+    setTab(next);
+    setOpenChapter(null);
+    setSelectedNode(null);
+    setSelectedChapter(null);
+  };
+
+  const isChapterOverview = tab === "chapters" && openChapter === null;
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -294,6 +514,37 @@ export function MindMapScreen({
           </Text>
           <View style={styles.headerSpacer} />
         </View>
+
+        {/* Tab chips / drill-down breadcrumb */}
+        {status === "ready" && (hasChapters || openChapter) ? (
+          <View style={styles.tabBar}>
+            {openChapter ? (
+              <TouchableOpacity
+                style={styles.crumbButton}
+                onPress={() => setOpenChapter(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Back to chapters"
+              >
+                <Text style={styles.crumbText} numberOfLines={1}>
+                  ‹ Chapters · {openChapter.title ?? `Chapter ${openChapter.index}`}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <Chip
+                  label="Concepts"
+                  active={tab === "concepts"}
+                  onPress={() => goToTab("concepts")}
+                />
+                <Chip
+                  label="Chapters"
+                  active={tab === "chapters"}
+                  onPress={() => goToTab("chapters")}
+                />
+              </>
+            )}
+          </View>
+        ) : null}
 
         {/* Content */}
         <View style={styles.content}>
@@ -327,131 +578,51 @@ export function MindMapScreen({
             </View>
           )}
 
-          {status === "ready" && layout ? (
-            layout.l1Nodes.length === 0 ? (
+          {status === "ready" && data ? (
+            data.nodes.length === 0 ? (
               <View style={styles.centered}>
                 <Text style={styles.emptyTitle}>No concepts extracted</Text>
                 <Text style={styles.emptySubtitle}>
                   The mind map was generated but contains no nodes.
                 </Text>
               </View>
+            ) : openChapter ? (
+              <MindMapCanvas
+                data={{
+                  genre,
+                  nodes: openChapter.nodes,
+                  edges: openChapter.edges,
+                }}
+                variant="tree"
+                centerLabel={openChapter.title ?? `Chapter ${openChapter.index}`}
+                centerSubLabel={`${openChapter.nodes.length} concepts`}
+                onNodeTap={setSelectedNode}
+              />
+            ) : isChapterOverview && chaptersData ? (
+              <MindMapCanvas
+                data={chaptersData}
+                variant="hub"
+                centerLabel={bookTitle}
+                centerSubLabel={`${chapters.length} chapters`}
+                onNodeTap={(node) => {
+                  const ch = chapters.find((c) => c.id === node.id) ?? null;
+                  setSelectedChapter(ch);
+                }}
+              />
             ) : (
-              <ReactNativeZoomableView
-                // Size the zoom subject to the content so it centres on the map
-                // centre (this style lands on the inner transformed view).
-                style={{ width: size, height: size }}
-                contentWidth={size}
-                contentHeight={size}
-                initialZoom={initialZoom}
-                minZoom={MIN_ZOOM}
-                maxZoom={MAX_ZOOM}
-                // A square map can't fill a portrait viewport without clipping,
-                // so don't bind to borders — let it sit fully visible and pan free.
-                bindToBorders={false}
-                doubleTapZoomToCenter={false}
-                visualTouchFeedbackEnabled={false}
-              >
-                <View style={{ width: size, height: size }}>
-                  {/* Connector lines (non-interactive) */}
-                  <Svg
-                    width={size}
-                    height={size}
-                    pointerEvents="none"
-                    style={StyleSheet.absoluteFill}
-                  >
-                    <Defs>
-                      <Marker
-                        id="arr"
-                        markerWidth={7}
-                        markerHeight={5}
-                        refX={7}
-                        refY={2.5}
-                        orient="auto"
-                      >
-                        <Polygon points="0 0, 7 2.5, 0 5" fill="#c4bdb5" />
-                      </Marker>
-                    </Defs>
-
-                    {/* L1 → L2 dashed branches */}
-                    {layout.l2Nodes.map((l2, i) => {
-                      const parent = layout.l1Nodes.find(
-                        (l1) => l1.node.id === l2.parentId
-                      );
-                      if (!parent) return null;
-                      return (
-                        <Path
-                          key={`br-${i}`}
-                          d={branchPath(parent.x, parent.y, l2.x, l2.y)}
-                          stroke="#d8d2cc"
-                          strokeWidth={1.2}
-                          strokeDasharray="5,3"
-                          fill="none"
-                        />
-                      );
-                    })}
-
-                    {/* Center → L1 spokes */}
-                    {layout.l1Nodes.map((l1, i) => (
-                      <Path
-                        key={`sp-${i}`}
-                        d={spokePath(geometry.cx, geometry.cy, l1.x, l1.y)}
-                        stroke="#c4bdb5"
-                        strokeWidth={1.8}
-                        fill="none"
-                        markerEnd="url(#arr)"
-                      />
-                    ))}
-                  </Svg>
-
-                  {/* Center node (native, not pressable) */}
-                  <View
-                    style={[
-                      styles.centerNode,
-                      {
-                        left: geometry.cx - geometry.centerW / 2,
-                        top: geometry.cy - geometry.centerH / 2,
-                        width: geometry.centerW,
-                        minHeight: geometry.centerH,
-                      },
-                    ]}
-                  >
-                    <Text style={styles.centerTitle} numberOfLines={2}>
-                      {bookTitle}
-                    </Text>
-                    {data?.genre ? (
-                      <Text style={styles.centerGenre} numberOfLines={1}>
-                        {data.genre}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  {/* L2 nodes (below L1 in z-order) */}
-                  {layout.l2Nodes.map((ln) => (
-                    <NodeView
-                      key={ln.node.id}
-                      ln={ln}
-                      geometry={geometry}
-                      onPress={() => setSelectedNode(ln.node)}
-                    />
-                  ))}
-
-                  {/* L1 nodes */}
-                  {layout.l1Nodes.map((ln) => (
-                    <NodeView
-                      key={ln.node.id}
-                      ln={ln}
-                      geometry={geometry}
-                      onPress={() => setSelectedNode(ln.node)}
-                    />
-                  ))}
-                </View>
-              </ReactNativeZoomableView>
+              <MindMapCanvas
+                data={data}
+                variant="tree"
+                centerLabel={bookTitle}
+                centerSubLabel={genre || null}
+                onNodeTap={setSelectedNode}
+              />
             )
           ) : null}
         </View>
 
-        {/* Legend */}
-        {status === "ready" && (
+        {/* Legend — concept node types only (hidden on the chapters overview) */}
+        {status === "ready" && !isChapterOverview && (
           <View style={styles.legend}>
             {(Object.keys(NODE_COLORS) as MindMapNodeType[]).map((type) => (
               <View key={type} style={styles.legendItem}>
@@ -468,8 +639,7 @@ export function MindMapScreen({
         )}
       </View>
 
-      {/* Node detail sheet — nested inside this Modal so it stacks above the
-          mind map on iOS (a sibling Modal would render behind it). */}
+      {/* Concept node detail sheet */}
       <NodeTapSheet
         node={selectedNode}
         bookId={bookId}
@@ -483,7 +653,45 @@ export function MindMapScreen({
           onAsk(node);
         }}
       />
+
+      {/* Chapter detail sheet */}
+      <ChapterTapSheet
+        chapter={selectedChapter}
+        onClose={() => setSelectedChapter(null)}
+        onJumpToChapter={(paragraphId) => {
+          setSelectedChapter(null);
+          onJumpToPassage(paragraphId);
+        }}
+        onExplore={(chapter) => {
+          setSelectedChapter(null);
+          setOpenChapter(chapter);
+        }}
+      />
     </Modal>
+  );
+}
+
+function Chip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      testID={`mindmap-tab-${label.toLowerCase()}`}
+      style={[styles.chip, active && styles.chipActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -510,6 +718,27 @@ const styles = StyleSheet.create({
     color: "#171715",
   },
   headerSpacer: { minWidth: 70 },
+  tabBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee7dc",
+    backgroundColor: "#fafaf8",
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: "#efece6",
+  },
+  chipActive: { backgroundColor: "#7c5cbf" },
+  chipText: { fontSize: 13, fontWeight: "600", color: "#6d6860" },
+  chipTextActive: { color: "#fff" },
+  crumbButton: { flex: 1, paddingVertical: 4 },
+  crumbText: { fontSize: 14, fontWeight: "600", color: "#4a3a73" },
   content: { flex: 1 },
   centeredState: {
     flex: 1,
