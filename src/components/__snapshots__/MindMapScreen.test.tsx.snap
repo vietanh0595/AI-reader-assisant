@@ -471,7 +471,7 @@ exports[`rendering: insufficient_content state shows friendly message 1`] = `
             }
           }
         >
-          Read more of the book before generating a mind map.
+          This book doesn't have enough content to generate a mind map.
         </Text>
       </View>
     </View>
@@ -584,35 +584,66 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
         }
       }
     >
-      <RCTScrollView
-        contentContainerStyle={
+      <View
+        onLayout={[Function]}
+        onMoveShouldSetResponder={[Function]}
+        onMoveShouldSetResponderCapture={[Function]}
+        onResponderEnd={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderReject={[Function]}
+        onResponderRelease={[Function]}
+        onResponderStart={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        onStartShouldSetResponderCapture={[Function]}
+        style={
           {
             "alignItems": "center",
+            "flex": 1,
             "justifyContent": "center",
-            "padding": 16,
+            "overflow": "hidden",
+            "position": "relative",
           }
         }
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
       >
-        <View>
+        <View
+          collapsable={false}
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "height": 758,
+              "justifyContent": "center",
+              "transform": [
+                {
+                  "scale": 0.9839650145772595,
+                },
+                {
+                  "translateX": 0,
+                },
+                {
+                  "translateY": 0,
+                },
+              ],
+              "width": 758,
+            }
+          }
+        >
           <View
             style={
               {
-                "height": 600,
-                "width": 600,
+                "height": 758,
+                "width": 758,
               }
             }
           >
             <RNSVGSvgView
-              align="xMidYMid"
-              bbHeight={600}
-              bbWidth={600}
+              bbHeight={758}
+              bbWidth={758}
               focusable={false}
-              height={600}
-              meetOrSlice={0}
-              minX={0}
-              minY={0}
+              height={758}
               pointerEvents="none"
               style={
                 [
@@ -621,15 +652,20 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                     "borderWidth": 0,
                   },
                   {
+                    "bottom": 0,
+                    "left": 0,
+                    "position": "absolute",
+                    "right": 0,
+                    "top": 0,
+                  },
+                  {
                     "flex": 0,
-                    "height": 600,
-                    "width": 600,
+                    "height": 758,
+                    "width": 758,
                   },
                 ]
               }
-              vbHeight={600}
-              vbWidth={600}
-              width={600}
+              width={758}
             >
               <RNSVGGroup
                 fill={
@@ -641,16 +677,16 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               >
                 <RNSVGDefs>
                   <RNSVGMarker
-                    markerHeight={6}
+                    markerHeight={5}
                     markerUnits="strokeWidth"
-                    markerWidth={8}
-                    name="arrowhead"
+                    markerWidth={7}
+                    name="arr"
                     orient="auto"
-                    refX={8}
-                    refY={3}
+                    refX={7}
+                    refY={2.5}
                   >
                     <RNSVGPath
-                      d="M0 0 8 3 0 6z"
+                      d="M0 0 7 2.5 0 5z"
                       fill={
                         {
                           "payload": 4291083701,
@@ -666,9 +702,9 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                   </RNSVGMarker>
                 </RNSVGDefs>
                 <RNSVGPath
-                  d="M 300 300 Q 410 300 480 300"
+                  d="M 379 379 Q 379 280 379 201"
                   fill={null}
-                  markerEnd="arrowhead"
+                  markerEnd="arr"
                   propList={
                     [
                       "fill",
@@ -682,12 +718,12 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                       "type": 0,
                     }
                   }
-                  strokeWidth={1.5}
+                  strokeWidth={1.8}
                 />
                 <RNSVGPath
-                  d="M 300 300 Q 245.00000000000003 395.2627944162883 210.00000000000006 455.88457268119896"
+                  d="M 379 379 Q 464.7365149746594 428.5 533.1525218736301 468"
                   fill={null}
-                  markerEnd="arrowhead"
+                  markerEnd="arr"
                   propList={
                     [
                       "fill",
@@ -701,12 +737,12 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                       "type": 0,
                     }
                   }
-                  strokeWidth={1.5}
+                  strokeWidth={1.8}
                 />
                 <RNSVGPath
-                  d="M 300 300 Q 244.99999999999994 204.73720558371176 209.99999999999991 144.11542731880107"
+                  d="M 379 379 Q 293.2634850253406 428.5 224.84747812636994 468.00000000000006"
                   fill={null}
-                  markerEnd="arrowhead"
+                  markerEnd="arr"
                   propList={
                     [
                       "fill",
@@ -720,373 +756,58 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                       "type": 0,
                     }
                   }
-                  strokeWidth={1.5}
+                  strokeWidth={1.8}
                 />
-                <RNSVGGroup
-                  fill={
-                    {
-                      "payload": 4278190080,
-                      "type": 0,
-                    }
-                  }
-                >
-                  <RNSVGRect
-                    fill={
-                      {
-                        "payload": 4286340287,
-                        "type": 0,
-                      }
-                    }
-                    height={50}
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rx={10}
-                    ry={10}
-                    width={110}
-                    x={245}
-                    y={275}
-                  />
-                  <RNSVGText
-                    alignmentBaseline="middle"
-                    content={null}
-                    dx={[]}
-                    dy={[]}
-                    fill={
-                      {
-                        "payload": 4294967295,
-                        "type": 0,
-                      }
-                    }
-                    font={
-                      {
-                        "fontSize": 11,
-                        "fontWeight": "700",
-                        "textAnchor": "middle",
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rotate={[]}
-                    x={
-                      [
-                        300,
-                      ]
-                    }
-                    y={
-                      [
-                        294,
-                      ]
-                    }
-                  >
-                    <RNSVGTSpan
-                      content="Atomic Habits"
-                      dx={[]}
-                      dy={[]}
-                      fill={
-                        {
-                          "payload": 4278190080,
-                          "type": 0,
-                        }
-                      }
-                      font={{}}
-                      rotate={[]}
-                      x={[]}
-                      y={[]}
-                    />
-                  </RNSVGText>
-                  <RNSVGText
-                    alignmentBaseline="middle"
-                    content={null}
-                    dx={[]}
-                    dy={[]}
-                    fill={
-                      {
-                        "payload": 3019898879,
-                        "type": 0,
-                      }
-                    }
-                    font={
-                      {
-                        "fontSize": 9,
-                        "textAnchor": "middle",
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rotate={[]}
-                    x={
-                      [
-                        300,
-                      ]
-                    }
-                    y={
-                      [
-                        310,
-                      ]
-                    }
-                  >
-                    <RNSVGTSpan
-                      content="non-fiction"
-                      dx={[]}
-                      dy={[]}
-                      fill={
-                        {
-                          "payload": 4278190080,
-                          "type": 0,
-                        }
-                      }
-                      font={{}}
-                      rotate={[]}
-                      x={[]}
-                      y={[]}
-                    />
-                  </RNSVGText>
-                </RNSVGGroup>
-                <RNSVGGroup
-                  fill={
-                    {
-                      "payload": 4278190080,
-                      "type": 0,
-                    }
-                  }
-                >
-                  <RNSVGRect
-                    fill={
-                      {
-                        "payload": 4289255632,
-                        "type": 0,
-                      }
-                    }
-                    height={40.86}
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rx={10}
-                    ry={10}
-                    width={102.15}
-                    x={428.925}
-                    y={279.57}
-                  />
-                  <RNSVGText
-                    alignmentBaseline="middle"
-                    content={null}
-                    dx={[]}
-                    dy={[]}
-                    fill={
-                      {
-                        "payload": 4279914576,
-                        "type": 0,
-                      }
-                    }
-                    font={
-                      {
-                        "fontSize": 10,
-                        "fontWeight": "600",
-                        "textAnchor": "middle",
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rotate={[]}
-                    x={
-                      [
-                        480,
-                      ]
-                    }
-                    y={
-                      [
-                        300,
-                      ]
-                    }
-                  >
-                    <RNSVGTSpan
-                      content="Habit Loop"
-                      dx={[]}
-                      dy={[]}
-                      fill={
-                        {
-                          "payload": 4278190080,
-                          "type": 0,
-                        }
-                      }
-                      font={{}}
-                      rotate={[]}
-                      x={[]}
-                      y={[]}
-                    />
-                  </RNSVGText>
-                </RNSVGGroup>
-                <RNSVGGroup
-                  fill={
-                    {
-                      "payload": 4278190080,
-                      "type": 0,
-                    }
-                  }
-                >
-                  <RNSVGEllipse
-                    cx={210.00000000000006}
-                    cy={455.88457268119896}
-                    fill={
-                      {
-                        "payload": 4291341036,
-                        "type": 0,
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rx={49.725}
-                    ry={19.89}
-                  />
-                  <RNSVGText
-                    alignmentBaseline="middle"
-                    content={null}
-                    dx={[]}
-                    dy={[]}
-                    fill={
-                      {
-                        "payload": 4282198894,
-                        "type": 0,
-                      }
-                    }
-                    font={
-                      {
-                        "fontSize": 10,
-                        "fontWeight": "600",
-                        "textAnchor": "middle",
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rotate={[]}
-                    x={
-                      [
-                        210.00000000000006,
-                      ]
-                    }
-                    y={
-                      [
-                        455.88457268119896,
-                      ]
-                    }
-                  >
-                    <RNSVGTSpan
-                      content="Identity Chan…"
-                      dx={[]}
-                      dy={[]}
-                      fill={
-                        {
-                          "payload": 4278190080,
-                          "type": 0,
-                        }
-                      }
-                      font={{}}
-                      rotate={[]}
-                      x={[]}
-                      y={[]}
-                    />
-                  </RNSVGText>
-                </RNSVGGroup>
-                <RNSVGGroup
-                  fill={
-                    {
-                      "payload": 4278190080,
-                      "type": 0,
-                    }
-                  }
-                >
-                  <RNSVGEllipse
-                    cx={209.99999999999991}
-                    cy={144.11542731880107}
-                    fill={
-                      {
-                        "payload": 4289255632,
-                        "type": 0,
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rx={47.7}
-                    ry={19.080000000000002}
-                  />
-                  <RNSVGText
-                    alignmentBaseline="middle"
-                    content={null}
-                    dx={[]}
-                    dy={[]}
-                    fill={
-                      {
-                        "payload": 4279914576,
-                        "type": 0,
-                      }
-                    }
-                    font={
-                      {
-                        "fontSize": 10,
-                        "fontWeight": "600",
-                        "textAnchor": "middle",
-                      }
-                    }
-                    propList={
-                      [
-                        "fill",
-                      ]
-                    }
-                    rotate={[]}
-                    x={
-                      [
-                        209.99999999999991,
-                      ]
-                    }
-                    y={
-                      [
-                        144.11542731880107,
-                      ]
-                    }
-                  >
-                    <RNSVGTSpan
-                      content="Environment D…"
-                      dx={[]}
-                      dy={[]}
-                      fill={
-                        {
-                          "payload": 4278190080,
-                          "type": 0,
-                        }
-                      }
-                      font={{}}
-                      rotate={[]}
-                      x={[]}
-                      y={[]}
-                    />
-                  </RNSVGText>
-                </RNSVGGroup>
               </RNSVGGroup>
             </RNSVGSvgView>
             <View
+              style={
+                [
+                  {
+                    "alignItems": "center",
+                    "backgroundColor": "#7c5cbf",
+                    "borderRadius": 14,
+                    "justifyContent": "center",
+                    "paddingHorizontal": 10,
+                    "paddingVertical": 8,
+                    "position": "absolute",
+                  },
+                  {
+                    "left": 295,
+                    "minHeight": 64,
+                    "top": 347,
+                    "width": 168,
+                  },
+                ]
+              }
+            >
+              <Text
+                numberOfLines={2}
+                style={
+                  {
+                    "color": "#fff",
+                    "fontSize": 14,
+                    "fontWeight": "700",
+                    "textAlign": "center",
+                  }
+                }
+              >
+                Atomic Habits
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={
+                  {
+                    "color": "rgba(255,255,255,0.75)",
+                    "fontSize": 10,
+                    "marginTop": 2,
+                  }
+                }
+              >
+                non-fiction
+              </Text>
+            </View>
+            <View
               accessibilityState={
                 {
                   "busy": undefined,
@@ -1107,7 +828,10 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               accessible={true}
               collapsable={false}
               focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
               onClick={[Function]}
+              onFocus={[Function]}
               onResponderGrant={[Function]}
               onResponderMove={[Function]}
               onResponderRelease={[Function]}
@@ -1115,17 +839,46 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               onResponderTerminationRequest={[Function]}
               onStartShouldSetResponder={[Function]}
               style={
-                {
-                  "height": 56.86,
-                  "left": 420.925,
-                  "opacity": 1,
-                  "position": "absolute",
-                  "top": 271.57,
-                  "width": 118.15,
-                }
+                [
+                  {
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "paddingHorizontal": 8,
+                    "paddingVertical": 4,
+                    "position": "absolute",
+                  },
+                  {
+                    "backgroundColor": "#a8d8d0",
+                    "borderRadius": 12,
+                    "left": 317,
+                    "minHeight": 50,
+                    "opacity": 1,
+                    "top": 176,
+                    "transform": [
+                      {
+                        "scale": 1,
+                      },
+                    ],
+                    "width": 124,
+                  },
+                ]
               }
               testID="mindmap-node-n1"
-            />
+            >
+              <Text
+                numberOfLines={2}
+                style={
+                  {
+                    "color": "#1a5050",
+                    "fontSize": 13,
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  }
+                }
+              >
+                Habit Loop
+              </Text>
+            </View>
             <View
               accessibilityState={
                 {
@@ -1147,7 +900,10 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               accessible={true}
               collapsable={false}
               focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
               onClick={[Function]}
+              onFocus={[Function]}
               onResponderGrant={[Function]}
               onResponderMove={[Function]}
               onResponderRelease={[Function]}
@@ -1155,17 +911,46 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               onResponderTerminationRequest={[Function]}
               onStartShouldSetResponder={[Function]}
               style={
-                {
-                  "height": 55.78,
-                  "left": 152.27500000000006,
-                  "opacity": 1,
-                  "position": "absolute",
-                  "top": 427.994572681199,
-                  "width": 115.45,
-                }
+                [
+                  {
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "paddingHorizontal": 8,
+                    "paddingVertical": 4,
+                    "position": "absolute",
+                  },
+                  {
+                    "backgroundColor": "#c8aaec",
+                    "borderRadius": 12,
+                    "left": 471.1525218736301,
+                    "minHeight": 50,
+                    "opacity": 1,
+                    "top": 443,
+                    "transform": [
+                      {
+                        "scale": 1,
+                      },
+                    ],
+                    "width": 124,
+                  },
+                ]
               }
               testID="mindmap-node-n2"
-            />
+            >
+              <Text
+                numberOfLines={2}
+                style={
+                  {
+                    "color": "#3d2b6e",
+                    "fontSize": 13,
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  }
+                }
+              >
+                Identity Change
+              </Text>
+            </View>
             <View
               accessibilityState={
                 {
@@ -1187,7 +972,10 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               accessible={true}
               collapsable={false}
               focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
               onClick={[Function]}
+              onFocus={[Function]}
               onResponderGrant={[Function]}
               onResponderMove={[Function]}
               onResponderRelease={[Function]}
@@ -1195,20 +983,49 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               onResponderTerminationRequest={[Function]}
               onStartShouldSetResponder={[Function]}
               style={
-                {
-                  "height": 54.160000000000004,
-                  "left": 154.2999999999999,
-                  "opacity": 1,
-                  "position": "absolute",
-                  "top": 117.03542731880107,
-                  "width": 111.4,
-                }
+                [
+                  {
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "paddingHorizontal": 8,
+                    "paddingVertical": 4,
+                    "position": "absolute",
+                  },
+                  {
+                    "backgroundColor": "#a8d8d0",
+                    "borderRadius": 12,
+                    "left": 162.84747812636994,
+                    "minHeight": 50,
+                    "opacity": 1,
+                    "top": 443.00000000000006,
+                    "transform": [
+                      {
+                        "scale": 1,
+                      },
+                    ],
+                    "width": 124,
+                  },
+                ]
               }
               testID="mindmap-node-n3"
-            />
+            >
+              <Text
+                numberOfLines={2}
+                style={
+                  {
+                    "color": "#1a5050",
+                    "fontSize": 13,
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  }
+                }
+              >
+                Environment Design
+              </Text>
+            </View>
           </View>
         </View>
-      </RCTScrollView>
+      </View>
     </View>
     <View
       style={
@@ -1217,7 +1034,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           "borderTopColor": "#e4dfd6",
           "borderTopWidth": 1,
           "flexDirection": "row",
-          "gap": 16,
+          "gap": 14,
           "justifyContent": "center",
           "paddingHorizontal": 16,
           "paddingVertical": 12,
@@ -1229,7 +1046,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           {
             "alignItems": "center",
             "flexDirection": "row",
-            "gap": 6,
+            "gap": 5,
           }
         }
       >
@@ -1238,8 +1055,8 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
             [
               {
                 "borderRadius": 3,
-                "height": 14,
-                "width": 14,
+                "height": 13,
+                "width": 13,
               },
               {
                 "backgroundColor": "#c8aaec",
@@ -1251,7 +1068,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           style={
             {
               "color": "#78746d",
-              "fontSize": 12,
+              "fontSize": 11,
               "textTransform": "capitalize",
             }
           }
@@ -1264,7 +1081,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           {
             "alignItems": "center",
             "flexDirection": "row",
-            "gap": 6,
+            "gap": 5,
           }
         }
       >
@@ -1273,8 +1090,8 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
             [
               {
                 "borderRadius": 3,
-                "height": 14,
-                "width": 14,
+                "height": 13,
+                "width": 13,
               },
               {
                 "backgroundColor": "#a8d8d0",
@@ -1286,7 +1103,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           style={
             {
               "color": "#78746d",
-              "fontSize": 12,
+              "fontSize": 11,
               "textTransform": "capitalize",
             }
           }
@@ -1299,7 +1116,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           {
             "alignItems": "center",
             "flexDirection": "row",
-            "gap": 6,
+            "gap": 5,
           }
         }
       >
@@ -1308,8 +1125,8 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
             [
               {
                 "borderRadius": 3,
-                "height": 14,
-                "width": 14,
+                "height": 13,
+                "width": 13,
               },
               {
                 "backgroundColor": "#f5c9a0",
@@ -1321,7 +1138,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           style={
             {
               "color": "#78746d",
-              "fontSize": 12,
+              "fontSize": 11,
               "textTransform": "capitalize",
             }
           }
@@ -1334,7 +1151,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           {
             "alignItems": "center",
             "flexDirection": "row",
-            "gap": 6,
+            "gap": 5,
           }
         }
       >
@@ -1343,8 +1160,8 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
             [
               {
                 "borderRadius": 3,
-                "height": 14,
-                "width": 14,
+                "height": 13,
+                "width": 13,
               },
               {
                 "backgroundColor": "#f2a8b0",
@@ -1356,7 +1173,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
           style={
             {
               "color": "#78746d",
-              "fontSize": 12,
+              "fontSize": 11,
               "textTransform": "capitalize",
             }
           }

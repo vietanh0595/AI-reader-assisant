@@ -14,6 +14,7 @@
     "worker": "python3 -m backend.app.worker_main"
   },
   "dependencies": {
+    "@openspacelabs/react-native-zoomable-view": "^2.4.2",
     "expo": "~54.0.35",
     "expo-auth-session": "~7.0.11",
     "expo-clipboard": "~8.0.8",

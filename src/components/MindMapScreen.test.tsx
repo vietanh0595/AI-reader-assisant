@@ -44,7 +44,8 @@ const baseProps = {
   error: undefined as string | undefined,
   onClose: jest.fn(),
   onRetry: jest.fn(),
-  onNodeTap: jest.fn(),
+  onJumpToPassage: jest.fn(),
+  onAsk: jest.fn(),
 };
 
 const READY_PROPS = {
@@ -84,15 +85,15 @@ test("rendering: insufficient_content state shows friendly message", async () =>
 });
 
 test("rendering: ready state renders SVG with node labels", async () => {
-  const { getByText, toJSON } = await render(
+  const { getByText, getAllByText, toJSON } = await render(
     <MindMapScreen
       {...baseProps}
       status="ready"
       data={FIXTURE_DATA}
     />,
   );
-  // Book title shown in native header Text
-  getByText("Atomic Habits");
+  // Book title shown in both the header and the center node
+  expect(getAllByText("Atomic Habits").length).toBeGreaterThanOrEqual(1);
   // Legend labels (native Text elements)
   getByText("theme");
   getByText("concept");
@@ -103,13 +104,23 @@ test("rendering: ready state renders SVG with node labels", async () => {
   expect(toJSON()).toMatchSnapshot();
 });
 
-test("calls onNodeTap when a node is pressed", async () => {
-  const onNodeTap = jest.fn();
-  const { getByTestId } = await render(
-    <MindMapScreen {...READY_PROPS} onNodeTap={onNodeTap} />,
+test("tapping a node opens the detail sheet", async () => {
+  const { getByTestId, findByText } = await render(
+    <MindMapScreen {...READY_PROPS} />,
   );
   fireEvent.press(getByTestId("mindmap-node-n1"));
-  expect(onNodeTap).toHaveBeenCalledWith(FIXTURE_DATA.nodes[0]);
+  // The NodeTapSheet renders the node summary once opened
+  expect(await findByText("Four-step pattern.")).toBeTruthy();
+});
+
+test("jumping to a passage from the sheet calls onJumpToPassage", async () => {
+  const onJumpToPassage = jest.fn();
+  const { getByTestId, findByText } = await render(
+    <MindMapScreen {...READY_PROPS} onJumpToPassage={onJumpToPassage} />,
+  );
+  fireEvent.press(getByTestId("mindmap-node-n1"));
+  fireEvent.press(await findByText("Passage: p1"));
+  expect(onJumpToPassage).toHaveBeenCalledWith("p1");
 });
 
 test("shows empty state when ready but no nodes", async () => {
@@ -121,7 +132,8 @@ test("shows empty state when ready but no nodes", async () => {
       data={{ genre: "non-fiction", nodes: [], edges: [] }}
       onClose={jest.fn()}
       onRetry={jest.fn()}
-      onNodeTap={jest.fn()}
+      onJumpToPassage={jest.fn()}
+      onAsk={jest.fn()}
     />,
   );
   expect(getByText(/no concepts extracted/i)).toBeTruthy();

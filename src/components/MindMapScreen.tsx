@@ -1,32 +1,25 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  ScrollView,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
-import Svg, {
-  Defs,
-  Ellipse,
-  G,
-  Marker,
-  Path,
-  Polygon,
-  Rect,
-  Text as SvgText,
-} from "react-native-svg";
+import { ReactNativeZoomableView } from "@openspacelabs/react-native-zoomable-view";
+import Svg, { Defs, Marker, Path, Polygon } from "react-native-svg";
 import {
   MindMapData,
-  MindMapEdge,
   MindMapNode,
   MindMapNodeType,
   MindMapStatus,
 } from "../rag/mindmapTypes";
+import { NodeTapSheet } from "./NodeTapSheet";
 
-// ─── Color constants ──────────────────────────────────────────────────────────
+// ─── Colors ───────────────────────────────────────────────────────────────────
 
 const NODE_COLORS: Record<MindMapNodeType, string> = {
   theme: "#c8aaec",
@@ -34,29 +27,59 @@ const NODE_COLORS: Record<MindMapNodeType, string> = {
   argument: "#f5c9a0",
   character: "#f2a8b0",
 };
-
 const NODE_TEXT_COLORS: Record<MindMapNodeType, string> = {
   theme: "#3d2b6e",
   concept: "#1a5050",
   argument: "#7a3f10",
   character: "#6e1a26",
 };
+const CENTER_COLOR = "#7c5cbf";
 
-const CENTER_NODE_COLOR = "#7c5cbf";
-const CENTER_NODE_TEXT = "#fff";
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 3.5;
 
-// ─── Layout constants ─────────────────────────────────────────────────────────
+// ─── Geometry ─────────────────────────────────────────────────────────────────
+// A fixed-size square canvas sized tightly around the map (independent of the
+// screen) with generous, absolute spacing so nodes never overlap. The canvas is
+// wrapped in <ReactNativeZoomableView>, which handles all pan/zoom/centering.
 
-const SVG_WIDTH = 600;
-const SVG_HEIGHT = 600;
-const CX = SVG_WIDTH / 2;
-const CY = SVG_HEIGHT / 2;
-const R1 = 180;
+const R1 = 178; // inner ring radius — wide enough to space 8 L1 nodes
+const R2 = 293; // outer ring radius (R1 + radial gap for L2)
+const L2_REACH = 56; // half-extent of an L2 node beyond its centre
+const CANVAS_PAD = 30;
+const CANVAS_SIZE = (R2 + L2_REACH + CANVAS_PAD) * 2; // ≈ 758
 
-const BASE_WIDTH = 90;
-const BASE_HEIGHT = 36;
-const CENTER_WIDTH = 110;
-const CENTER_HEIGHT = 50;
+interface Geometry {
+  size: number;
+  cx: number;
+  cy: number;
+  r1: number;
+  r2: number;
+  centerW: number;
+  centerH: number;
+  l1W: number;
+  l1H: number;
+  l2W: number;
+  l2H: number;
+}
+
+const GEOMETRY: Geometry = {
+  size: CANVAS_SIZE,
+  cx: CANVAS_SIZE / 2,
+  cy: CANVAS_SIZE / 2,
+  r1: R1,
+  r2: R2,
+  centerW: 168,
+  centerH: 64,
+  l1W: 124,
+  l1H: 50,
+  l2W: 100,
+  l2H: 42,
+};
+
+function clampN(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,20 +87,13 @@ interface LayoutNode {
   node: MindMapNode;
   x: number;
   y: number;
-  isLeaf: boolean;
-}
-
-interface LayoutEdge {
-  edge: MindMapEdge;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  level: 1 | 2;
+  parentId: string | null;
 }
 
 interface ComputedLayout {
-  nodes: LayoutNode[];
-  edges: LayoutEdge[];
+  l1Nodes: LayoutNode[];
+  l2Nodes: LayoutNode[];
 }
 
 export interface MindMapScreenProps {
@@ -88,120 +104,147 @@ export interface MindMapScreenProps {
   error?: string;
   onClose: () => void;
   onRetry: () => void;
-  onNodeTap: (node: MindMapNode) => void;
+  onJumpToPassage: (passageId: string) => void;
+  onAsk: (node: MindMapNode) => void;
 }
 
 // ─── Layout computation ───────────────────────────────────────────────────────
 
-function computeLayout(data: MindMapData): ComputedLayout {
+function computeLayout(data: MindMapData, g: Geometry): ComputedLayout {
   const { nodes, edges } = data;
+  if (nodes.length === 0) return { l1Nodes: [], l2Nodes: [] };
 
-  // Track which node ids have outgoing edges (branch nodes)
-  const nodesWithOutgoing = new Set(edges.map((e) => e.from));
+  // Sort by importance descending; top ~55% → L1, remainder → L2
+  const sorted = [...nodes].sort((a, b) => b.importance - a.importance);
+  const l1Count = Math.min(8, Math.max(3, Math.ceil(sorted.length * 0.55)));
+  const l1Nodes = sorted.slice(0, l1Count);
+  const l2Nodes = sorted.slice(l1Count);
+  const l1Ids = new Set(l1Nodes.map((n) => n.id));
 
-  // Position map: nodeId -> {x, y}
-  const positionMap = new Map<string, { x: number; y: number }>();
-
-  const total = nodes.length;
-  const layoutNodes: LayoutNode[] = nodes.map((node, index) => {
-    const angle = (index / total) * 2 * Math.PI;
-    const x = CX + R1 * Math.cos(angle);
-    const y = CY + R1 * Math.sin(angle);
-    const isLeaf = !nodesWithOutgoing.has(node.id);
-    positionMap.set(node.id, { x, y });
-    return { node, x, y, isLeaf };
-  });
-
-  const layoutEdges: LayoutEdge[] = edges
-    .map((edge) => {
-      const from = positionMap.get(edge.from);
-      const to = positionMap.get(edge.to);
-      if (!from || !to) return null;
-      return {
-        edge,
-        x1: from.x,
-        y1: from.y,
-        x2: to.x,
-        y2: to.y,
-      };
-    })
-    .filter((e): e is LayoutEdge => e !== null);
-
-  return { nodes: layoutNodes, edges: layoutEdges };
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-// Spoke from center to a ring node — the primary "mind map" edge
-function SpokeEdge({ x2, y2 }: { x2: number; y2: number }) {
-  const midX = (CX + x2) / 2;
-  const midY = (CY + y2) / 2;
-  // Slight outward bow: pull control point away from center by 20px
-  const dx = midX - CX;
-  const dy = midY - CY;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ctrlX = midX + (dx / len) * 20;
-  const ctrlY = midY + (dy / len) * 20;
-  const d = `M ${CX} ${CY} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
-  return (
-    <Path d={d} stroke="#c4bdb5" strokeWidth={1.5} fill="none" markerEnd="url(#arrowhead)" />
-  );
-}
-
-// Pure-visual node shape — no onPress here; tapping is handled by the overlay below the SVG
-function NodeShape({
-  node,
-  x,
-  y,
-  isLeaf,
-}: {
-  node: MindMapNode;
-  x: number;
-  y: number;
-  isLeaf: boolean;
-}) {
-  const fill = NODE_COLORS[node.type];
-  const textColor = NODE_TEXT_COLORS[node.type];
-  const scale = 0.85 + node.importance * 0.3;
-  const w = BASE_WIDTH * scale;
-  const h = BASE_HEIGHT * scale;
-
-  if (isLeaf) {
-    const rx = 45 * scale;
-    const ry = 18 * scale;
-    return (
-      <G>
-        <Ellipse cx={x} cy={y} rx={rx} ry={ry} fill={fill} />
-        <SvgText
-          x={x}
-          y={y}
-          textAnchor="middle"
-          alignmentBaseline="middle"
-          fontSize={10}
-          fill={textColor}
-          fontWeight="600"
-        >
-          {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
-        </SvgText>
-      </G>
-    );
+  // Find an L1 parent for each L2 node via the edge list
+  const parentMap = new Map<string, string>();
+  for (const e of edges) {
+    if (l1Ids.has(e.from) && !l1Ids.has(e.to) && !parentMap.has(e.to)) {
+      parentMap.set(e.to, e.from);
+    }
+  }
+  const fallback = l1Nodes[0]?.id ?? "";
+  for (const n of l2Nodes) {
+    if (!parentMap.has(n.id)) parentMap.set(n.id, fallback);
   }
 
+  // Position L1 nodes evenly around the inner ring (start at top)
+  const l1AngleMap = new Map<string, number>();
+  const l1Layout: LayoutNode[] = l1Nodes.map((node, i) => {
+    const angle = (i / l1Nodes.length) * 2 * Math.PI - Math.PI / 2;
+    l1AngleMap.set(node.id, angle);
+    return {
+      node,
+      x: g.cx + g.r1 * Math.cos(angle),
+      y: g.cy + g.r1 * Math.sin(angle),
+      level: 1 as const,
+      parentId: null,
+    };
+  });
+
+  // Group L2 nodes under their parent and fan them around the parent angle
+  const byParent = new Map<string, MindMapNode[]>();
+  for (const n of l2Nodes) {
+    const pid = parentMap.get(n.id) ?? fallback;
+    byParent.set(pid, [...(byParent.get(pid) ?? []), n]);
+  }
+
+  const l2Layout: LayoutNode[] = [];
+  for (const l1 of l1Layout) {
+    const children = byParent.get(l1.node.id) ?? [];
+    const pa = l1AngleMap.get(l1.node.id) ?? 0;
+    const halfSpread = (Math.PI / 7) * Math.min(children.length, 3);
+    children.forEach((child, j) => {
+      const offset =
+        children.length === 1
+          ? 0
+          : (j / (children.length - 1) - 0.5) * halfSpread * 2;
+      const a = pa + offset;
+      l2Layout.push({
+        node: child,
+        x: g.cx + g.r2 * Math.cos(a),
+        y: g.cy + g.r2 * Math.sin(a),
+        level: 2 as const,
+        parentId: l1.node.id,
+      });
+    });
+  }
+
+  return { l1Nodes: l1Layout, l2Nodes: l2Layout };
+}
+
+// ─── SVG edge helpers (curved connectors, pointerEvents disabled) ─────────────
+
+function spokePath(cx: number, cy: number, x2: number, y2: number): string {
+  const midX = (cx + x2) / 2;
+  const midY = (cy + y2) / 2;
+  const dx = midX - cx;
+  const dy = midY - cy;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ctrlX = midX + (dx / len) * 10;
+  const ctrlY = midY + (dy / len) * 10;
+  return `M ${cx} ${cy} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
+}
+
+function branchPath(x1: number, y1: number, x2: number, y2: number): string {
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ctrlX = midX - (dy / len) * 6;
+  const ctrlY = midY + (dx / len) * 6;
+  return `M ${x1} ${y1} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`;
+}
+
+// ─── Native node view ─────────────────────────────────────────────────────────
+
+function NodeView({
+  ln,
+  geometry,
+  onPress,
+}: {
+  ln: LayoutNode;
+  geometry: Geometry;
+  onPress: () => void;
+}) {
+  const isL1 = ln.level === 1;
+  const w = isL1 ? geometry.l1W : geometry.l2W;
+  const h = isL1 ? geometry.l1H : geometry.l2H;
+  const fontSize = isL1 ? 13 : 11;
+  const fill = NODE_COLORS[ln.node.type];
+  const color = NODE_TEXT_COLORS[ln.node.type];
   return (
-    <G>
-      <Rect x={x - w / 2} y={y - h / 2} width={w} height={h} rx={10} ry={10} fill={fill} />
-      <SvgText
-        x={x}
-        y={y}
-        textAnchor="middle"
-        alignmentBaseline="middle"
-        fontSize={10}
-        fill={textColor}
-        fontWeight="600"
+    <Pressable
+      testID={`mindmap-node-${ln.node.id}`}
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [
+        styles.node,
+        {
+          left: ln.x - w / 2,
+          top: ln.y - h / 2,
+          width: w,
+          minHeight: h,
+          backgroundColor: fill,
+          borderRadius: isL1 ? 12 : 14,
+          opacity: pressed ? 0.6 : 1,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={2}
+        style={{ color, fontSize, fontWeight: "600", textAlign: "center" }}
       >
-        {node.label.length > 14 ? node.label.slice(0, 13) + "…" : node.label}
-      </SvgText>
-    </G>
+        {ln.node.label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -215,12 +258,23 @@ export function MindMapScreen({
   error,
   onClose,
   onRetry,
-  onNodeTap,
+  onJumpToPassage,
+  onAsk,
 }: MindMapScreenProps) {
+  const { width: screenW } = useWindowDimensions();
+  const geometry = GEOMETRY;
+  const size = geometry.size;
+  const [selectedNode, setSelectedNode] = useState<MindMapNode | null>(null);
+
   const layout = useMemo<ComputedLayout | null>(() => {
     if (!data) return null;
-    return computeLayout(data);
-  }, [data]);
+    return computeLayout(data, geometry);
+  }, [data, geometry]);
+
+  // Start zoomed so the whole map (its widest ring) fits the screen width with
+  // a margin; the user can pinch in/out and pan freely from there.
+  const mapWidth = geometry.r2 * 2 + geometry.l2W;
+  const initialZoom = clampN((screenW * 0.9) / mapWidth, MIN_ZOOM, 1);
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -253,9 +307,7 @@ export function MindMapScreen({
           {status === "failed" && (
             <View style={styles.centeredState}>
               <Text style={styles.failedTitle}>Generation failed</Text>
-              {error ? (
-                <Text style={styles.failedDetail}>{error}</Text>
-              ) : null}
+              {error ? <Text style={styles.failedDetail}>{error}</Text> : null}
               <TouchableOpacity
                 onPress={onRetry}
                 style={styles.retryButton}
@@ -270,126 +322,130 @@ export function MindMapScreen({
             <View style={styles.centeredState}>
               <Text style={styles.stateText}>Not enough content</Text>
               <Text style={styles.stateSubText}>
-                Read more of the book before generating a mind map.
+                This book doesn't have enough content to generate a mind map.
               </Text>
             </View>
           )}
 
           {status === "ready" && layout ? (
-            layout.nodes.length === 0 ? (
+            layout.l1Nodes.length === 0 ? (
               <View style={styles.centered}>
                 <Text style={styles.emptyTitle}>No concepts extracted</Text>
-                <Text style={styles.emptySubtitle}>The mind map was generated but contains no nodes.</Text>
+                <Text style={styles.emptySubtitle}>
+                  The mind map was generated but contains no nodes.
+                </Text>
               </View>
             ) : (
-              <ScrollView
-                contentContainerStyle={styles.svgContainer}
-                showsHorizontalScrollIndicator={false}
-                showsVerticalScrollIndicator={false}
+              <ReactNativeZoomableView
+                // Size the zoom subject to the content so it centres on the map
+                // centre (this style lands on the inner transformed view).
+                style={{ width: size, height: size }}
+                contentWidth={size}
+                contentHeight={size}
+                initialZoom={initialZoom}
+                minZoom={MIN_ZOOM}
+                maxZoom={MAX_ZOOM}
+                // A square map can't fill a portrait viewport without clipping,
+                // so don't bind to borders — let it sit fully visible and pan free.
+                bindToBorders={false}
+                doubleTapZoomToCenter={false}
+                visualTouchFeedbackEnabled={false}
               >
-                {/*
-                 * We layer two things inside a fixed-size View:
-                 *   1. The SVG (visual only — pointerEvents="none" so it never
-                 *      swallows touches)
-                 *   2. Absolutely-positioned TouchableOpacity elements that sit
-                 *      exactly over each node and handle taps reliably on iOS.
-                 */}
-                <View style={{ width: SVG_WIDTH, height: SVG_HEIGHT }}>
+                <View style={{ width: size, height: size }}>
+                  {/* Connector lines (non-interactive) */}
                   <Svg
-                    width={SVG_WIDTH}
-                    height={SVG_HEIGHT}
-                    viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+                    width={size}
+                    height={size}
                     pointerEvents="none"
+                    style={StyleSheet.absoluteFill}
                   >
                     <Defs>
                       <Marker
-                        id="arrowhead"
-                        markerWidth={8}
-                        markerHeight={6}
-                        refX={8}
-                        refY={3}
+                        id="arr"
+                        markerWidth={7}
+                        markerHeight={5}
+                        refX={7}
+                        refY={2.5}
                         orient="auto"
                       >
-                        <Polygon points="0 0, 8 3, 0 6" fill="#c4bdb5" />
+                        <Polygon points="0 0, 7 2.5, 0 5" fill="#c4bdb5" />
                       </Marker>
                     </Defs>
 
-                    {/* Hub-and-spoke: one curved line from center to every ring node */}
-                    {layout.nodes.map((ln, i) => (
-                      <SpokeEdge key={`spoke-${i}`} x2={ln.x} y2={ln.y} />
-                    ))}
+                    {/* L1 → L2 dashed branches */}
+                    {layout.l2Nodes.map((l2, i) => {
+                      const parent = layout.l1Nodes.find(
+                        (l1) => l1.node.id === l2.parentId
+                      );
+                      if (!parent) return null;
+                      return (
+                        <Path
+                          key={`br-${i}`}
+                          d={branchPath(parent.x, parent.y, l2.x, l2.y)}
+                          stroke="#d8d2cc"
+                          strokeWidth={1.2}
+                          strokeDasharray="5,3"
+                          fill="none"
+                        />
+                      );
+                    })}
 
-                    {/* Center node (drawn after spokes so it sits on top) */}
-                    <G>
-                      <Rect
-                        x={CX - CENTER_WIDTH / 2}
-                        y={CY - CENTER_HEIGHT / 2}
-                        width={CENTER_WIDTH}
-                        height={CENTER_HEIGHT}
-                        rx={10}
-                        ry={10}
-                        fill={CENTER_NODE_COLOR}
-                      />
-                      <SvgText
-                        x={CX}
-                        y={CY - 6}
-                        textAnchor="middle"
-                        alignmentBaseline="middle"
-                        fontSize={11}
-                        fill={CENTER_NODE_TEXT}
-                        fontWeight="700"
-                      >
-                        {bookTitle.length > 16 ? bookTitle.slice(0, 15) + "…" : bookTitle}
-                      </SvgText>
-                      {data?.genre ? (
-                        <SvgText
-                          x={CX}
-                          y={CY + 10}
-                          textAnchor="middle"
-                          alignmentBaseline="middle"
-                          fontSize={9}
-                          fill="rgba(255,255,255,0.7)"
-                        >
-                          {data.genre}
-                        </SvgText>
-                      ) : null}
-                    </G>
-
-                    {/* Ring nodes — visual only */}
-                    {layout.nodes.map((ln) => (
-                      <NodeShape
-                        key={ln.node.id}
-                        node={ln.node}
-                        x={ln.x}
-                        y={ln.y}
-                        isLeaf={ln.isLeaf}
+                    {/* Center → L1 spokes */}
+                    {layout.l1Nodes.map((l1, i) => (
+                      <Path
+                        key={`sp-${i}`}
+                        d={spokePath(geometry.cx, geometry.cy, l1.x, l1.y)}
+                        stroke="#c4bdb5"
+                        strokeWidth={1.8}
+                        fill="none"
+                        markerEnd="url(#arr)"
                       />
                     ))}
                   </Svg>
 
-                  {/* Touch overlay: one invisible TouchableOpacity per node */}
-                  {layout.nodes.map((ln) => {
-                    const scale = 0.85 + ln.node.importance * 0.3;
-                    const hw = ln.isLeaf ? 45 * scale * 2 + 16 : BASE_WIDTH * scale + 16;
-                    const hh = ln.isLeaf ? 18 * scale * 2 + 16 : BASE_HEIGHT * scale + 16;
-                    return (
-                      <TouchableOpacity
-                        key={ln.node.id}
-                        testID={`mindmap-node-${ln.node.id}`}
-                        style={{
-                          position: "absolute",
-                          left: ln.x - hw / 2,
-                          top: ln.y - hh / 2,
-                          width: hw,
-                          height: hh,
-                        }}
-                        onPress={() => onNodeTap(ln.node)}
-                        activeOpacity={0.7}
-                      />
-                    );
-                  })}
+                  {/* Center node (native, not pressable) */}
+                  <View
+                    style={[
+                      styles.centerNode,
+                      {
+                        left: geometry.cx - geometry.centerW / 2,
+                        top: geometry.cy - geometry.centerH / 2,
+                        width: geometry.centerW,
+                        minHeight: geometry.centerH,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.centerTitle} numberOfLines={2}>
+                      {bookTitle}
+                    </Text>
+                    {data?.genre ? (
+                      <Text style={styles.centerGenre} numberOfLines={1}>
+                        {data.genre}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* L2 nodes (below L1 in z-order) */}
+                  {layout.l2Nodes.map((ln) => (
+                    <NodeView
+                      key={ln.node.id}
+                      ln={ln}
+                      geometry={geometry}
+                      onPress={() => setSelectedNode(ln.node)}
+                    />
+                  ))}
+
+                  {/* L1 nodes */}
+                  {layout.l1Nodes.map((ln) => (
+                    <NodeView
+                      key={ln.node.id}
+                      ln={ln}
+                      geometry={geometry}
+                      onPress={() => setSelectedNode(ln.node)}
+                    />
+                  ))}
                 </View>
-              </ScrollView>
+              </ReactNativeZoomableView>
             )
           ) : null}
         </View>
@@ -400,7 +456,10 @@ export function MindMapScreen({
             {(Object.keys(NODE_COLORS) as MindMapNodeType[]).map((type) => (
               <View key={type} style={styles.legendItem}>
                 <View
-                  style={[styles.legendChip, { backgroundColor: NODE_COLORS[type] }]}
+                  style={[
+                    styles.legendChip,
+                    { backgroundColor: NODE_COLORS[type] },
+                  ]}
                 />
                 <Text style={styles.legendLabel}>{type}</Text>
               </View>
@@ -408,6 +467,22 @@ export function MindMapScreen({
           </View>
         )}
       </View>
+
+      {/* Node detail sheet — nested inside this Modal so it stacks above the
+          mind map on iOS (a sibling Modal would render behind it). */}
+      <NodeTapSheet
+        node={selectedNode}
+        bookId={bookId}
+        onClose={() => setSelectedNode(null)}
+        onJumpToPassage={(passageId) => {
+          setSelectedNode(null);
+          onJumpToPassage(passageId);
+        }}
+        onAsk={(node) => {
+          setSelectedNode(null);
+          onAsk(node);
+        }}
+      />
     </Modal>
   );
 }
@@ -415,10 +490,7 @@ export function MindMapScreen({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
+  container: { flex: 1, backgroundColor: "#fff" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -428,14 +500,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e4dfd6",
   },
-  backButton: {
-    minWidth: 70,
-  },
-  backText: {
-    color: "#244f38",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  backButton: { minWidth: 70 },
+  backText: { color: "#244f38", fontSize: 15, fontWeight: "600" },
   headerTitle: {
     flex: 1,
     textAlign: "center",
@@ -443,12 +509,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#171715",
   },
-  headerSpacer: {
-    minWidth: 70,
-  },
-  content: {
-    flex: 1,
-  },
+  headerSpacer: { minWidth: 70 },
+  content: { flex: 1 },
   centeredState: {
     flex: 1,
     alignItems: "center",
@@ -456,27 +518,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 12,
   },
-  stateText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#78746d",
-    marginTop: 8,
-  },
-  stateSubText: {
-    fontSize: 13,
-    color: "#a8a298",
-    textAlign: "center",
-  },
-  failedTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#9c2f2f",
-  },
-  failedDetail: {
-    fontSize: 13,
-    color: "#b06060",
-    textAlign: "center",
-  },
+  stateText: { fontSize: 16, fontWeight: "600", color: "#78746d", marginTop: 8 },
+  stateSubText: { fontSize: 13, color: "#a8a298", textAlign: "center" },
+  failedTitle: { fontSize: 18, fontWeight: "700", color: "#9c2f2f" },
+  failedDetail: { fontSize: 13, color: "#b06060", textAlign: "center" },
   retryButton: {
     marginTop: 4,
     paddingHorizontal: 24,
@@ -484,11 +529,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#7c5cbf",
     borderRadius: 20,
   },
-  retryText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  retryText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -496,44 +537,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 8,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#78746d",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: "#a8a298",
-    textAlign: "center",
-  },
-  svgContainer: {
+  emptyTitle: { fontSize: 16, fontWeight: "600", color: "#78746d" },
+  emptySubtitle: { fontSize: 13, color: "#a8a298", textAlign: "center" },
+  node: {
+    position: "absolute",
     alignItems: "center",
     justifyContent: "center",
-    padding: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  centerNode: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: CENTER_COLOR,
+  },
+  centerTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  centerGenre: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 10,
+    marginTop: 2,
   },
   legend: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 16,
+    gap: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderTopWidth: 1,
     borderTopColor: "#e4dfd6",
     backgroundColor: "#fafaf8",
   },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  legendChip: {
-    width: 14,
-    height: 14,
-    borderRadius: 3,
-  },
-  legendLabel: {
-    fontSize: 12,
-    color: "#78746d",
-    textTransform: "capitalize",
-  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendChip: { width: 13, height: 13, borderRadius: 3 },
+  legendLabel: { fontSize: 11, color: "#78746d", textTransform: "capitalize" },
 });

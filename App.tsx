@@ -37,12 +37,11 @@ import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { BookSources } from './src/components/BookSources';
 import { ConversationThread } from './src/components/ConversationThread';
 import { MindMapScreen } from './src/components/MindMapScreen';
-import { NodeTapSheet } from './src/components/NodeTapSheet';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
 import { resolveMindMapBookId, shouldStartMindMapGeneration } from './src/rag/mindmapTarget';
-import type { MindMapData, MindMapNode, MindMapStatus } from './src/rag/mindmapTypes';
+import type { MindMapData, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -2405,7 +2404,6 @@ function ReaderApp() {
   const [mindMapStatus, setMindMapStatus] = useState<MindMapStatus>('pending');
   const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
   const [mindMapError, setMindMapError] = useState<string | undefined>(undefined);
-  const [tappedNode, setTappedNode] = useState<MindMapNode | null>(null);
   const mindMapPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mindMapCancelRef = useRef(false);
 
@@ -3549,7 +3547,6 @@ function ReaderApp() {
       mindMapPollRef.current = null;
     }
     setMindMapOpen(false);
-    setTappedNode(null);
   }
 
   return (
@@ -3786,27 +3783,32 @@ function ReaderApp() {
             setMindMapData(null);
             void openMindMap(mindMapBookId, mindMapBookTitle, { forceGenerate: true });
           }}
-          onNodeTap={(node) => setTappedNode(node)}
+          onJumpToPassage={(passageId) => {
+            // The mind map can be opened from the library list, so make sure the
+            // book is open in the reader before scrolling to the passage.
+            closeMindMap();
+            openLibraryItem(mindMapBookId);
+            setScrollTarget({ nonce: Date.now(), paragraphId: passageId });
+          }}
+          onAsk={(_node) => {
+            // Ensure the mind map's book is the active book before opening the
+            // thread (the map may have been launched from the library list).
+            closeMindMap();
+            openLibraryItem(mindMapBookId);
+            // activeLibraryItem won't reflect the new book until the next render,
+            // so guard against the target item directly rather than via it.
+            const targetItem = libraryItems.find((i) => i.id === mindMapBookId);
+            if (targetItem && targetItem.wholeBookAi.status === 'ready') {
+              setAssistError(null);
+              setIsAskOpen(false);
+              setIsThreadCollapsed(false);
+              setIsThreadOpen(true);
+            } else {
+              setIsWholeBookAiOpen(true);
+            }
+          }}
         />
       ) : null}
-
-      <NodeTapSheet
-        node={tappedNode}
-        bookId={mindMapBookId ?? ''}
-        onClose={() => setTappedNode(null)}
-        onJumpToPassage={(passageId) => {
-          setTappedNode(null);
-          // Jump to the passage in the reader using the paragraph id
-          closeMindMap();
-          setScrollTarget({ nonce: Date.now(), paragraphId: passageId });
-        }}
-        onAsk={(node) => {
-          setTappedNode(null);
-          closeMindMap();
-          // Use the proper guard that checks indexing status before opening the thread
-          openConversationThread();
-        }}
-      />
     </SafeAreaProvider>
   );
 }

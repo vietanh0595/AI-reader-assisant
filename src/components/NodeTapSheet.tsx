@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -67,12 +66,10 @@ export function NodeTapSheet({
   const typeTextColor = NODE_TEXT_COLORS[node.type];
 
   return (
-    <Modal
-      transparent
-      visible
-      animationType="none"
-      onRequestClose={onClose}
-    >
+    // Absolute-fill overlay (not a Modal) so it stacks reliably above the mind
+    // map, which is itself rendered inside a Modal — a nested Modal would not
+    // present over its parent on iOS.
+    <View style={styles.overlay} pointerEvents="box-none">
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={onClose} accessibilityLabel="Dismiss">
         <View style={styles.backdrop} testID="nodeTapSheet-backdrop" />
@@ -143,15 +140,19 @@ export function NodeTapSheet({
           </TouchableOpacity>
         </View>
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+  },
   backdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(23,23,21,0.45)",
   },
   sheet: {
