@@ -31,6 +31,7 @@ class ChapterExtractionResult(BaseModel):
     nodes: list[ExtractedNode]
     edges: list[ExtractedEdge]
     genre: Optional[str] = None
+    summary: Optional[str] = None  # 1–2 sentence summary of the whole chapter
 
 
 class ConsolidationResult(BaseModel):

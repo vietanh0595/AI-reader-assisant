@@ -190,6 +190,51 @@ class TestGenerate:
         assert "edges" in stored_data
         assert "genre" in stored_data
 
+    def test_stores_per_chapter_maps_for_drilldown(self):
+        """READY data includes a chapters array with each chapter's own graph."""
+        chapter = self._chapter_tuple()
+        extraction = _make_chapter_result(n_nodes=2)
+        consolidation = _make_consolidation_result(n_nodes=3)
+
+        service, _, _, _ = _make_service(
+            extractor_result=extraction,
+            consolidation_result=consolidation,
+            chapters=[chapter],
+        )
+        service._store_result = MagicMock()
+
+        service._run_pipeline(book_id=uuid4())
+
+        stored_data = service._store_result.call_args.kwargs["data"]
+        assert "chapters" in stored_data
+        assert len(stored_data["chapters"]) == 1
+        ch = stored_data["chapters"][0]
+        assert ch["index"] == 1
+        assert ch["id"] == "ch1"
+        assert ch["title"] == "Chapter 1"
+        assert ch["jump_paragraph_id"] == "p1"
+        assert len(ch["nodes"]) == 2
+        # Nodes are serialised with whole-book aliases (passage_ids, from/to).
+        assert "passage_ids" in ch["nodes"][0]
+
+    def test_thin_chapters_excluded_from_drilldown(self):
+        """Chapters with fewer than 2 nodes are not exposed as drill-downs."""
+        chapter = self._chapter_tuple()
+        extraction = _make_chapter_result(n_nodes=1)
+        consolidation = _make_consolidation_result(n_nodes=3)
+
+        service, _, _, _ = _make_service(
+            extractor_result=extraction,
+            consolidation_result=consolidation,
+            chapters=[chapter],
+        )
+        service._store_result = MagicMock()
+
+        service._run_pipeline(book_id=uuid4())
+
+        stored_data = service._store_result.call_args.kwargs["data"]
+        assert stored_data["chapters"] == []
+
     def test_stores_insufficient_content_when_few_nodes(self):
         """generate() stores INSUFFICIENT_CONTENT when consolidation returns <3 nodes."""
         chapter = self._chapter_tuple()

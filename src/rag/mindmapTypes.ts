@@ -16,10 +16,21 @@ export interface MindMapEdge {
   label: string;
 }
 
+export interface MindMapChapter {
+  index: number;
+  id: string;
+  title: string | null;
+  summary: string | null;
+  jump_paragraph_id: string | null;
+  nodes: MindMapNode[];
+  edges: MindMapEdge[];
+}
+
 export interface MindMapData {
   genre: string;
   nodes: MindMapNode[];
   edges: MindMapEdge[];
+  chapters?: MindMapChapter[];
 }
 
 export type MindMapStatus = "pending" | "generating" | "ready" | "failed" | "insufficient_content";

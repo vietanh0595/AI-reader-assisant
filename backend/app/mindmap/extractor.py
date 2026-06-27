@@ -24,6 +24,8 @@ Rules:
 - summary must be 1–2 sentences describing what the book says about this concept.
 - Edge labels should be short relationship descriptions (e.g. "leads to", "supports", "contrasts with").
 - Node IDs must be unique within this chapter (use "ch<N>-n<M>" format).
+- Set the top-level `summary` field to a 1–2 sentence summary of the chapter as a
+  whole (distinct from the per-node summaries).
 """
 
 _FIRST_CHAPTER_SUFFIX = """

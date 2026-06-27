@@ -62,6 +62,9 @@ class MindMapService:
             return
 
         chapter_results: list[ChapterExtractionResult] = []
+        # Per-chapter maps for the drill-down view. Built only for chapters whose
+        # extraction succeeded, so indices stay aligned with chapter_results.
+        chapter_maps: list[dict[str, Any]] = []
         detected_genre = "non-fiction"
 
         for i, (chapter_id, chapter_title, blocks) in enumerate(chapters):
@@ -80,6 +83,17 @@ class MindMapService:
                 if is_first and result.genre:
                     detected_genre = result.genre
                 chapter_results.append(result)
+                chapter_maps.append(
+                    {
+                        "index": i + 1,
+                        "id": chapter_id or f"ch{i+1}",
+                        "title": chapter_title,
+                        "summary": result.summary,
+                        "jump_paragraph_id": paragraph_ids[0] if paragraph_ids else None,
+                        "nodes": [n.model_dump(by_alias=True) for n in result.nodes],
+                        "edges": [e.model_dump(by_alias=True) for e in result.edges],
+                    }
+                )
             except Exception:
                 logger.warning("Extraction failed for chapter %s, skipping", chapter_id, exc_info=True)
 
@@ -98,10 +112,14 @@ class MindMapService:
             self._store_result(book_id, MindMapStatus.INSUFFICIENT_CONTENT, data=None)
             return
 
+        # Only expose chapter drill-downs with enough nodes to be worth opening.
+        usable_chapters = [c for c in chapter_maps if len(c["nodes"]) >= 2]
+
         data: dict[str, Any] = {
             "genre": consolidated.genre,
             "nodes": [n.model_dump(by_alias=True) for n in consolidated.nodes],
             "edges": [e.model_dump(by_alias=True) for e in consolidated.edges],
+            "chapters": usable_chapters,
         }
         self._store_result(book_id, MindMapStatus.READY, data=data)
 
