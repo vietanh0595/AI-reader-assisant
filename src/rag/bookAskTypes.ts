@@ -16,6 +16,7 @@ export type BookAskRequest = {
   currentReadingOrder: number;
   currentChapterId?: string;
   includeWholeBook: boolean;
+  allowGeneralKnowledge?: boolean;
   history?: { role: 'user' | 'assistant'; content: string }[];
   selectedText?: string;
 };

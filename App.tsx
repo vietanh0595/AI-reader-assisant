@@ -294,7 +294,7 @@ type PdfImportPageResponse = {
 
 type PdfImportResult = {
   author: string;
-  outline: Array<{ pageIndex: number; title: string }>;
+  outline: Array<{ pageIndex: number; title: string; depth?: number }>;
   pageCount: number;
   pages: PdfImportPageResponse[];
   title: string;
@@ -1011,7 +1011,15 @@ function toPdfReaderBook(pdfResult: PdfImportResult, asset: DocumentPickerAsset)
     }
   }
 
-  const outlineChapters = pdfResult.outline
+  const allOutlineEntries = pdfResult.outline;
+  const depthsPresent = allOutlineEntries.map((e) => e.depth ?? 0);
+  const minOutlineDepth = depthsPresent.length > 0 ? Math.min(...depthsPresent) : 0;
+  const topLevelOutline = allOutlineEntries.filter((e) => (e.depth ?? 0) === minOutlineDepth);
+  const filteredOutlineEntries =
+    topLevelOutline.length >= 2
+      ? topLevelOutline
+      : allOutlineEntries.filter((e) => (e.depth ?? 0) <= minOutlineDepth + 1);
+  const outlineChapters = filteredOutlineEntries
     .map((entry, index) => {
       const paragraphId = firstParagraphByPage.get(entry.pageIndex);
       return paragraphId
@@ -2406,6 +2414,14 @@ function ReaderApp() {
   const [mindMapError, setMindMapError] = useState<string | undefined>(undefined);
   const mindMapPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mindMapCancelRef = useRef(false);
+  // Navigation state lifted so it survives close/reopen for the same book.
+  const [mindMapNavTab, setMindMapNavTab] = useState<'concepts' | 'chapters'>('concepts');
+  const [mindMapNavOpenChapterId, setMindMapNavOpenChapterId] = useState<string | null>(null);
+  // Set when the user jumps to a passage from the mind map; drives the "← Map" return chip.
+  const [mindMapReturnBookId, setMindMapReturnBookId] = useState<string | null>(null);
+  // A quick-ask question queued from a mind-map tap sheet. Fired once the target book
+  // becomes active (book switch + conversation state are tied to activeBookId).
+  const [pendingQuickAsk, setPendingQuickAsk] = useState<{ bookId: string; question: string; allowGeneralKnowledge: boolean } | null>(null);
 
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2839,6 +2855,32 @@ function ReaderApp() {
     };
   }, [activeBookId, isStorageReady, libraryItems]);
 
+  // Fire a quick-ask queued from the mind map once its book is the active book.
+  // openMindMap can launch from the library list, so the book switch may land a
+  // render after the chip was tapped — wait for activeBookId to catch up.
+  useEffect(() => {
+    if (!pendingQuickAsk) {
+      return;
+    }
+    if (activeBookId !== pendingQuickAsk.bookId) {
+      return;
+    }
+    const { question, allowGeneralKnowledge } = pendingQuickAsk;
+    setPendingQuickAsk(null);
+    if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+      // Shouldn't happen — the mind map can't render without Whole-Book AI — but
+      // fail safe by prompting to enable it rather than silently dropping the ask.
+      setIsWholeBookAiOpen(true);
+      return;
+    }
+    setAssistError(null);
+    setIsAskOpen(false);
+    setIsThreadCollapsed(false);
+    setIsThreadOpen(true);
+    void runBookAsk(question, undefined, { allowGeneralKnowledge });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuickAsk, activeBookId, activeLibraryItem]);
+
   function chooseAction(action: SelectionAction) {
     if (action === 'copy') {
       void copySelectionToClipboard();
@@ -3268,7 +3310,7 @@ function ReaderApp() {
   async function runBookAsk(
     questionText: string,
     ctx?: { quotedText: string; quotedTurnId?: string },
-    opts?: { skipUserTurn?: boolean },
+    opts?: { skipUserTurn?: boolean; allowGeneralKnowledge?: boolean },
   ) {
     // Capture before any awaits — clearContextChip() is called immediately on submit
     // which clears selection state, so we must snapshot it here while it's still set.
@@ -3327,6 +3369,7 @@ function ReaderApp() {
         currentParagraphId: paragraphId,
         currentReadingOrder: readingOrder,
         includeWholeBook,
+        allowGeneralKnowledge: opts?.allowGeneralKnowledge ?? false,
         accessToken: token,
         history: buildHistory(activeLibraryItem.conversation),
         selectedText: chipText,
@@ -3464,7 +3507,14 @@ function ReaderApp() {
     const libraryItem = libraryItems.find((item) => item.id === bookId);
     const cloudBookId = libraryItem ? resolveMindMapBookId(bookId, libraryItem.wholeBookAi) : null;
 
-    // Reset state
+    // Reset nav state when opening a different book; preserve it for the same book.
+    if (bookId !== mindMapBookId) {
+      setMindMapNavTab('concepts');
+      setMindMapNavOpenChapterId(null);
+    }
+    // Clear the return-chip context — user explicitly opened the map.
+    setMindMapReturnBookId(null);
+
     setMindMapBookId(bookId);
     setMindMapBookTitle(bookTitle);
     setMindMapStatus('pending');
@@ -3576,6 +3626,7 @@ function ReaderApp() {
             <View style={styles.readerScreen}>
               <ReaderHeader
                 book={currentBook}
+                hasMapReturn={mindMapReturnBookId === activeLibraryItem.id}
                 isImportingBook={isImportingBook}
                 isScanningDocument={isScanningDocument}
                 onImportBook={importBook}
@@ -3777,6 +3828,12 @@ function ReaderApp() {
           status={mindMapStatus}
           data={mindMapData}
           error={mindMapError}
+          initialTab={mindMapNavTab}
+          initialOpenChapterId={mindMapNavOpenChapterId}
+          onNavigationChange={(tab, openChapterId) => {
+            setMindMapNavTab(tab);
+            setMindMapNavOpenChapterId(openChapterId);
+          }}
           onClose={closeMindMap}
           onRetry={() => {
             setMindMapStatus('generating');
@@ -3786,6 +3843,7 @@ function ReaderApp() {
           onJumpToPassage={(passageId) => {
             // The mind map can be opened from the library list, so make sure the
             // book is open in the reader before scrolling to the passage.
+            setMindMapReturnBookId(mindMapBookId); // enable "← Map" return chip
             closeMindMap();
             openLibraryItem(mindMapBookId);
             setScrollTarget({ nonce: Date.now(), paragraphId: passageId });
@@ -3806,6 +3864,14 @@ function ReaderApp() {
             } else {
               setIsWholeBookAiOpen(true);
             }
+          }}
+          onQuickAsk={(question, allowGeneralKnowledge) => {
+            // Switch to the map's book, leave a "← Map" breadcrumb, and queue the
+            // ready-made question — the effect fires it once the book is active.
+            setMindMapReturnBookId(mindMapBookId);
+            closeMindMap();
+            openLibraryItem(mindMapBookId);
+            setPendingQuickAsk({ bookId: mindMapBookId, question, allowGeneralKnowledge });
           }}
         />
       ) : null}
@@ -4340,6 +4406,7 @@ function getReaderTextStyle(paragraph: Paragraph) {
 
 function ReaderHeader({
   book,
+  hasMapReturn,
   isImportingBook,
   isScanningDocument,
   onImportBook,
@@ -4348,6 +4415,7 @@ function ReaderHeader({
   onScanDocument,
 }: {
   book: ReaderBook;
+  hasMapReturn: boolean;
   isImportingBook: boolean;
   isScanningDocument: boolean;
   onImportBook: () => void;
@@ -4376,14 +4444,25 @@ function ReaderHeader({
       </View>
 
       <View style={styles.headerTools}>
-        <Pressable
-          accessibilityLabel="Mind map"
-          accessibilityRole="button"
-          onPress={onOpenMindMap}
-          style={styles.headerIconButton}
-        >
-          <Text style={styles.headerMindMapIcon}>🗺</Text>
-        </Pressable>
+        {hasMapReturn ? (
+          <Pressable
+            accessibilityLabel="Return to mind map"
+            accessibilityRole="button"
+            onPress={onOpenMindMap}
+            style={styles.mapReturnChip}
+          >
+            <Text style={styles.mapReturnChipText}>← Map</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityLabel="Mind map"
+            accessibilityRole="button"
+            onPress={onOpenMindMap}
+            style={styles.headerIconButton}
+          >
+            <Text style={styles.headerMindMapIcon}>🗺</Text>
+          </Pressable>
+        )}
         <Pressable accessibilityLabel="Text settings" accessibilityRole="button" style={styles.headerIconButton}>
           <Type color={colors.ink} size={19} strokeWidth={2} />
         </Pressable>
@@ -5496,6 +5575,19 @@ const styles = StyleSheet.create({
   },
   headerMindMapIcon: {
     fontSize: 19,
+  },
+  mapReturnChip: {
+    alignItems: 'center',
+    backgroundColor: '#ede8f7',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  mapReturnChipText: {
+    color: '#7c5cbf',
+    fontSize: 12,
+    fontWeight: '700',
   },
   webView: {
     backgroundColor: colors.paper,

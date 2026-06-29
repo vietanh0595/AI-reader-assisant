@@ -18,6 +18,7 @@ const BASE_PROPS = {
   onClose: jest.fn(),
   onJumpToPassage: jest.fn(),
   onAsk: jest.fn(),
+  onQuickAsk: jest.fn(),
 };
 
 afterEach(() => {
@@ -68,7 +69,7 @@ test("calls onJumpToPassage when a passage row is tapped", async () => {
 test("calls onClose when backdrop is pressed", async () => {
   const onClose = jest.fn();
   const { getByTestId } = await render(
-    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={onClose} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />,
+    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={onClose} onJumpToPassage={jest.fn()} onAsk={jest.fn()} onQuickAsk={jest.fn()} />,
   );
   fireEvent.press(getByTestId("nodeTapSheet-backdrop"));
   expect(onClose).toHaveBeenCalled();
@@ -77,9 +78,22 @@ test("calls onClose when backdrop is pressed", async () => {
 test("updates content when node changes", async () => {
   const OTHER_NODE: MindMapNode = { ...FIXTURE_NODE, id: "n2", label: "Identity Change", type: "theme" };
   const { getByText, rerender } = await render(
-    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />,
+    <NodeTapSheet node={FIXTURE_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} onQuickAsk={jest.fn()} />,
   );
   expect(getByText("Habit Loop")).toBeTruthy();
-  await rerender(<NodeTapSheet node={OTHER_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} />);
+  await rerender(<NodeTapSheet node={OTHER_NODE} bookId="b1" onClose={jest.fn()} onJumpToPassage={jest.fn()} onAsk={jest.fn()} onQuickAsk={jest.fn()} />);
   expect(getByText("Identity Change")).toBeTruthy();
+});
+
+test("calls onQuickAsk with a context-injected question when a chip is pressed", async () => {
+  const onQuickAsk = jest.fn();
+  await render(
+    <NodeTapSheet {...BASE_PROPS} node={FIXTURE_NODE} onQuickAsk={onQuickAsk} />,
+  );
+  fireEvent.press(screen.getByRole("button", { name: "More detail" }));
+  expect(onQuickAsk).toHaveBeenCalledTimes(1);
+  expect(onQuickAsk).toHaveBeenCalledWith(
+    expect.stringContaining('"Habit Loop"'),
+    true,
+  );
 });

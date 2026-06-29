@@ -46,6 +46,7 @@ const baseProps = {
   onRetry: jest.fn(),
   onJumpToPassage: jest.fn(),
   onAsk: jest.fn(),
+  onQuickAsk: jest.fn(),
 };
 
 const READY_PROPS = {
@@ -174,6 +175,7 @@ test("shows empty state when ready but no nodes", async () => {
       onRetry={jest.fn()}
       onJumpToPassage={jest.fn()}
       onAsk={jest.fn()}
+      onQuickAsk={jest.fn()}
     />,
   );
   expect(getByText(/no concepts extracted/i)).toBeTruthy();
@@ -220,6 +222,34 @@ test("exploring a chapter drills into its concept map", async () => {
   expect(await findByTestId("mindmap-node-ch1-n1")).toBeTruthy();
   // Breadcrumb back to chapters.
   getByText(/‹ Chapters/);
+});
+
+test("chapter sheet opened from drill-down center node hides Explore button", async () => {
+  const { getByTestId, findByTestId, findByText, queryByText } = await render(
+    <MindMapScreen {...CHAPTER_PROPS} />,
+  );
+  fireEvent.press(getByTestId("mindmap-tab-chapters"));
+  fireEvent.press(await findByTestId("mindmap-node-ch1"));
+  fireEvent.press(await findByText(/Explore chapter map/));
+  await findByTestId("mindmap-node-ch1-n1");
+  fireEvent.press(getByTestId("mindmap-center-node"));
+  await findByText("How habits form and stick.");
+  expect(queryByText(/Explore chapter map/)).toBeNull();
+});
+
+test("tapping the center node in a drilled chapter opens the chapter sheet", async () => {
+  const { getByTestId, findByTestId, findByText } = await render(
+    <MindMapScreen {...CHAPTER_PROPS} />,
+  );
+  // Navigate into the chapter drill-down
+  fireEvent.press(getByTestId("mindmap-tab-chapters"));
+  fireEvent.press(await findByTestId("mindmap-node-ch1"));
+  fireEvent.press(await findByText(/Explore chapter map/));
+  // Wait for the drill-down canvas to be fully rendered before pressing center
+  await findByTestId("mindmap-node-ch1-n1");
+  fireEvent.press(getByTestId("mindmap-center-node"));
+  // ChapterTapSheet opens with the chapter's info
+  expect(await findByText("How habits form and stick.")).toBeTruthy();
 });
 
 test("jump to chapter from the sheet calls onJumpToPassage", async () => {

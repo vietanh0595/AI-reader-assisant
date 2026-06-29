@@ -27,6 +27,7 @@ const BASE = {
   onClose: jest.fn(),
   onJumpToChapter: jest.fn(),
   onExplore: jest.fn(),
+  onQuickAsk: jest.fn(),
 };
 
 afterEach(() => jest.clearAllMocks());
@@ -50,6 +51,34 @@ test("calls onExplore when Explore is pressed", async () => {
   );
   fireEvent.press(screen.getByText(/Explore chapter map/));
   expect(onExplore).toHaveBeenCalledWith(CHAPTER);
+});
+
+test("hides Explore button when onExplore is not provided", async () => {
+  await render(
+    <ChapterTapSheet {...BASE} chapter={CHAPTER} onExplore={undefined} />,
+  );
+  expect(screen.queryByText(/Explore chapter map/)).toBeNull();
+});
+
+test("calls onQuickAsk with a context-injected question when a chip is pressed", async () => {
+  const onQuickAsk = jest.fn();
+  await render(
+    <ChapterTapSheet {...BASE} chapter={CHAPTER} onQuickAsk={onQuickAsk} />,
+  );
+  fireEvent.press(screen.getByText("Key takeaways"));
+  expect(onQuickAsk).toHaveBeenCalledWith(
+    'What are the key takeaways from "Compounding"?',
+    false,
+  );
+});
+
+test("Examples chip asks with general knowledge allowed", async () => {
+  const onQuickAsk = jest.fn();
+  await render(
+    <ChapterTapSheet {...BASE} chapter={CHAPTER} onQuickAsk={onQuickAsk} />,
+  );
+  fireEvent.press(screen.getByText("Examples"));
+  expect(onQuickAsk).toHaveBeenCalledWith(expect.any(String), true);
 });
 
 test("calls onJumpToChapter with the chapter's paragraph id", async () => {

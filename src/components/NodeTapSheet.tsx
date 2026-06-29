@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { MindMapNode, MindMapNodeType } from "../rag/mindmapTypes";
+import { NODE_QUICK_ASKS, nodeQuickAskQuestion } from "../rag/mindmapQuickAsk";
 
 // ─── Color constants ──────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ export interface NodeTapSheetProps {
   onClose: () => void;
   onJumpToPassage: (passageId: string) => void;
   onAsk: (node: MindMapNode) => void;
+  onQuickAsk: (question: string, allowGeneralKnowledge: boolean) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ export function NodeTapSheet({
   onClose,
   onJumpToPassage,
   onAsk,
+  onQuickAsk,
 }: NodeTapSheetProps) {
   const translateY = useRef(new Animated.Value(300)).current;
 
@@ -126,6 +129,32 @@ export function NodeTapSheet({
 
         <View style={styles.separator} />
 
+        {/* Quick-ask chips: inject this node's context into a ready-made question */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>LEARN MORE</Text>
+          <View style={styles.quickAskRow}>
+            {NODE_QUICK_ASKS.map(({ intent, label }) => (
+              <TouchableOpacity
+                key={intent}
+                style={styles.quickAskChip}
+                onPress={() => {
+                  const { question, allowGeneralKnowledge } = nodeQuickAskQuestion(
+                    node,
+                    intent,
+                  );
+                  onQuickAsk(question, allowGeneralKnowledge);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+              >
+                <Text style={styles.quickAskChipText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.separator} />
+
         {/* Ask button */}
         <View style={styles.section}>
           <TouchableOpacity
@@ -135,7 +164,7 @@ export function NodeTapSheet({
             accessibilityLabel={`Ask about ${node.label}`}
           >
             <Text style={styles.askButtonText}>
-              💬 Ask about {node.label}
+              💬 Ask your own question
             </Text>
           </TouchableOpacity>
         </View>
@@ -233,6 +262,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#78746d",
     marginTop: 2,
+  },
+  quickAskRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickAskChip: {
+    backgroundColor: "#efe9f7",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  quickAskChipText: {
+    color: "#4a3a73",
+    fontSize: 13,
+    fontWeight: "600",
   },
   askButton: {
     backgroundColor: "#7c5cbf",

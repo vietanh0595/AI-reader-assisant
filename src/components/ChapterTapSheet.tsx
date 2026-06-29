@@ -8,12 +8,17 @@ import {
   View,
 } from "react-native";
 import { MindMapChapter } from "../rag/mindmapTypes";
+import {
+  CHAPTER_QUICK_ASKS,
+  chapterQuickAskQuestion,
+} from "../rag/mindmapQuickAsk";
 
 export interface ChapterTapSheetProps {
   chapter: MindMapChapter | null;
   onClose: () => void;
   onJumpToChapter: (paragraphId: string) => void;
-  onExplore: (chapter: MindMapChapter) => void;
+  onExplore?: (chapter: MindMapChapter) => void;
+  onQuickAsk: (question: string, allowGeneralKnowledge: boolean) => void;
 }
 
 export function ChapterTapSheet({
@@ -21,6 +26,7 @@ export function ChapterTapSheet({
   onClose,
   onJumpToChapter,
   onExplore,
+  onQuickAsk,
 }: ChapterTapSheetProps) {
   const translateY = useRef(new Animated.Value(300)).current;
 
@@ -66,17 +72,43 @@ export function ChapterTapSheet({
           </View>
         ) : null}
 
+        {/* Quick-ask chips: inject this chapter's context into a ready-made question */}
+        <View style={styles.quickAskSection}>
+          <Text style={styles.quickAskHeader}>LEARN MORE</Text>
+          <View style={styles.quickAskRow}>
+            {CHAPTER_QUICK_ASKS.map(({ intent, label }) => (
+              <TouchableOpacity
+                key={intent}
+                style={styles.quickAskChip}
+                onPress={() => {
+                  const { question, allowGeneralKnowledge } = chapterQuickAskQuestion(
+                    chapter,
+                    intent,
+                  );
+                  onQuickAsk(question, allowGeneralKnowledge);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+              >
+                <Text style={styles.quickAskChipText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.button, styles.primaryButton]}
-            onPress={() => onExplore(chapter)}
-            accessibilityRole="button"
-            accessibilityLabel={`Explore ${title} mind map`}
-          >
-            <Text style={styles.primaryButtonText}>
-              🗺 Explore chapter map ({conceptCount})
-            </Text>
-          </TouchableOpacity>
+          {onExplore ? (
+            <TouchableOpacity
+              style={[styles.button, styles.primaryButton]}
+              onPress={() => onExplore(chapter)}
+              accessibilityRole="button"
+              accessibilityLabel={`Explore ${title} mind map`}
+            >
+              <Text style={styles.primaryButtonText}>
+                🗺 Explore chapter map ({conceptCount})
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           {chapter.jump_paragraph_id ? (
             <TouchableOpacity
@@ -142,6 +174,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6d6860",
     lineHeight: 22,
+  },
+  quickAskSection: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
+  quickAskHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#78746d",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  quickAskRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickAskChip: {
+    backgroundColor: "#efe9f7",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  quickAskChipText: {
+    color: "#4a3a73",
+    fontSize: 13,
+    fontWeight: "600",
   },
   actions: {
     paddingHorizontal: 20,

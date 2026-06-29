@@ -20,6 +20,7 @@ export function createBookAskApi(client: ApiClient): BookAskApi {
           currentReadingOrder: request.currentReadingOrder,
           currentChapterId: request.currentChapterId,
           includeWholeBook: request.includeWholeBook,
+          allowGeneralKnowledge: request.allowGeneralKnowledge,
           history: request.history,
           selectedText: request.selectedText,
         }),
@@ -41,6 +42,7 @@ export type RequestBookAskArgs = {
   currentParagraphId: string;
   currentReadingOrder: number;
   includeWholeBook: boolean;
+  allowGeneralKnowledge?: boolean;
   accessToken: string;
   history?: { role: 'user' | 'assistant'; content: string }[];
   selectedText?: string;
@@ -59,6 +61,7 @@ export async function requestBookAsk(
     currentParagraphId,
     currentReadingOrder,
     includeWholeBook,
+    allowGeneralKnowledge,
     accessToken,
     history,
     selectedText,
@@ -77,6 +80,7 @@ export async function requestBookAsk(
       currentParagraphId,
       currentReadingOrder,
       includeWholeBook,
+      allowGeneralKnowledge,
       history,
       selectedText,
     }),

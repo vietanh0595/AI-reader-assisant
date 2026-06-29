@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -110,6 +110,10 @@ export interface MindMapScreenProps {
   onRetry: () => void;
   onJumpToPassage: (passageId: string) => void;
   onAsk: (node: MindMapNode) => void;
+  onQuickAsk: (question: string, allowGeneralKnowledge: boolean) => void;
+  initialTab?: "concepts" | "chapters";
+  initialOpenChapterId?: string | null;
+  onNavigationChange?: (tab: "concepts" | "chapters", openChapterId: string | null) => void;
 }
 
 // ─── Layout computation ───────────────────────────────────────────────────────
@@ -216,11 +220,21 @@ function computeHubLayout(data: MindMapData, g: Geometry): ComputedLayout {
 
 // Build a synthetic concept-graph where each chapter is a single node, for the
 // chapters overview (rendered with the "hub" variant).
+const MAX_CHAPTER_NODES = 20;
+
 function chaptersToData(chapters: MindMapChapter[], genre: string): MindMapData {
+  const sorted = [...chapters].sort((a, b) => a.index - b.index);
+  const total = sorted.length;
+  const visible =
+    total <= MAX_CHAPTER_NODES
+      ? sorted
+      : Array.from({ length: MAX_CHAPTER_NODES }, (_, i) =>
+          sorted[Math.round((i * (total - 1)) / (MAX_CHAPTER_NODES - 1))],
+        );
   return {
     genre,
     edges: [],
-    nodes: chapters.map((c) => ({
+    nodes: visible.map((c) => ({
       id: c.id,
       label: c.title ?? `Chapter ${c.index}`,
       type: "theme" as MindMapNodeType,
@@ -262,10 +276,12 @@ function NodeView({
   ln,
   geometry,
   onPress,
+  showChapter = false,
 }: {
   ln: LayoutNode;
   geometry: Geometry;
   onPress: () => void;
+  showChapter?: boolean;
 }) {
   const isL1 = ln.level === 1;
   const w = isL1 ? geometry.l1W : geometry.l2W;
@@ -292,6 +308,14 @@ function NodeView({
         },
       ]}
     >
+      {showChapter && ln.node.chapter != null ? (
+        <Text
+          numberOfLines={1}
+          style={{ color, fontSize: 9, fontWeight: "700", textAlign: "center", opacity: 0.7, letterSpacing: 0.4 }}
+        >
+          CH. {ln.node.chapter}
+        </Text>
+      ) : null}
       <Text
         numberOfLines={2}
         style={{ color, fontSize, fontWeight: "600", textAlign: "center" }}
@@ -310,12 +334,14 @@ function MindMapCanvas({
   centerLabel,
   centerSubLabel,
   onNodeTap,
+  onCenterTap,
 }: {
   data: MindMapData;
   variant: CanvasVariant;
   centerLabel: string;
   centerSubLabel?: string | null;
   onNodeTap: (node: MindMapNode) => void;
+  onCenterTap?: () => void;
 }) {
   const { width: screenW } = useWindowDimensions();
   const geometry = GEOMETRY;
@@ -414,15 +440,20 @@ function MindMapCanvas({
           ))}
         </Svg>
 
-        {/* Center node (native, not pressable) */}
-        <View
-          style={[
+        {/* Center node */}
+        <Pressable
+          testID="mindmap-center-node"
+          onPress={onCenterTap}
+          disabled={!onCenterTap}
+          hitSlop={8}
+          style={({ pressed }) => [
             styles.centerNode,
             {
               left: geometry.cx - geometry.centerW / 2,
               top: geometry.cy - geometry.centerH / 2,
               width: geometry.centerW,
               minHeight: geometry.centerH,
+              opacity: onCenterTap && pressed ? 0.7 : 1,
             },
           ]}
         >
@@ -434,7 +465,7 @@ function MindMapCanvas({
               {centerSubLabel}
             </Text>
           ) : null}
-        </View>
+        </Pressable>
 
         {/* Outer nodes first so inner nodes sit above when they meet */}
         {layout.l2Nodes.map((ln) => (
@@ -443,6 +474,7 @@ function MindMapCanvas({
             ln={ln}
             geometry={geometry}
             onPress={() => onNodeTap(ln.node)}
+            showChapter={variant === "hub"}
           />
         ))}
         {layout.l1Nodes.map((ln) => (
@@ -451,6 +483,7 @@ function MindMapCanvas({
             ln={ln}
             geometry={geometry}
             onPress={() => onNodeTap(ln.node)}
+            showChapter={variant === "hub"}
           />
         ))}
       </View>
@@ -470,8 +503,12 @@ export function MindMapScreen({
   onRetry,
   onJumpToPassage,
   onAsk,
+  onQuickAsk,
+  initialTab = "concepts",
+  initialOpenChapterId = null,
+  onNavigationChange,
 }: MindMapScreenProps) {
-  const [tab, setTab] = useState<"concepts" | "chapters">("concepts");
+  const [tab, setTab] = useState<"concepts" | "chapters">(initialTab);
   const [openChapter, setOpenChapter] = useState<MindMapChapter | null>(null);
   const [selectedNode, setSelectedNode] = useState<MindMapNode | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<MindMapChapter | null>(
@@ -481,6 +518,16 @@ export function MindMapScreen({
   const chapters = data?.chapters ?? [];
   const hasChapters = chapters.length > 0;
   const genre = data?.genre ?? "";
+
+  // Restore drilled chapter from initialOpenChapterId once data arrives (one-shot).
+  const pendingChapterId = useRef(initialOpenChapterId);
+  useEffect(() => {
+    if (data && pendingChapterId.current) {
+      const ch = data.chapters?.find((c) => c.id === pendingChapterId.current) ?? null;
+      if (ch) setOpenChapter(ch);
+      pendingChapterId.current = null;
+    }
+  }, [data]);
 
   const chaptersData = useMemo(
     () => (hasChapters ? chaptersToData(chapters, genre) : null),
@@ -492,6 +539,18 @@ export function MindMapScreen({
     setOpenChapter(null);
     setSelectedNode(null);
     setSelectedChapter(null);
+    onNavigationChange?.(next, null);
+  };
+
+  const drillIntoChapter = (ch: MindMapChapter) => {
+    setOpenChapter(ch);
+    setSelectedChapter(null);
+    onNavigationChange?.(tab, ch.id);
+  };
+
+  const backToChapterOverview = () => {
+    setOpenChapter(null);
+    onNavigationChange?.("chapters", null);
   };
 
   const isChapterOverview = tab === "chapters" && openChapter === null;
@@ -521,7 +580,7 @@ export function MindMapScreen({
             {openChapter ? (
               <TouchableOpacity
                 style={styles.crumbButton}
-                onPress={() => setOpenChapter(null)}
+                onPress={backToChapterOverview}
                 accessibilityRole="button"
                 accessibilityLabel="Back to chapters"
               >
@@ -597,6 +656,7 @@ export function MindMapScreen({
                 centerLabel={openChapter.title ?? `Chapter ${openChapter.index}`}
                 centerSubLabel={`${openChapter.nodes.length} concepts`}
                 onNodeTap={setSelectedNode}
+                onCenterTap={() => setSelectedChapter(openChapter)}
               />
             ) : isChapterOverview && chaptersData ? (
               <MindMapCanvas
@@ -652,6 +712,10 @@ export function MindMapScreen({
           setSelectedNode(null);
           onAsk(node);
         }}
+        onQuickAsk={(question, allowGeneralKnowledge) => {
+          setSelectedNode(null);
+          onQuickAsk(question, allowGeneralKnowledge);
+        }}
       />
 
       {/* Chapter detail sheet */}
@@ -662,9 +726,13 @@ export function MindMapScreen({
           setSelectedChapter(null);
           onJumpToPassage(paragraphId);
         }}
-        onExplore={(chapter) => {
+        onExplore={openChapter === null ? (chapter) => {
           setSelectedChapter(null);
-          setOpenChapter(chapter);
+          drillIntoChapter(chapter);
+        } : undefined}
+        onQuickAsk={(question, allowGeneralKnowledge) => {
+          setSelectedChapter(null);
+          onQuickAsk(question, allowGeneralKnowledge);
         }}
       />
     </Modal>
