@@ -35,6 +35,17 @@ def test_book_ask_request_history_and_selection_default_empty():
     })
     assert req.history == []
     assert req.selected_text is None
+    assert req.allow_general_knowledge is False
+
+
+def test_book_ask_request_accepts_allow_general_knowledge():
+    req = BookAskRequest.model_validate({
+        "question": "examples?",
+        "currentParagraphId": "p-1",
+        "currentReadingOrder": 0,
+        "allowGeneralKnowledge": True,
+    })
+    assert req.allow_general_knowledge is True
 
 
 def ask_request(
@@ -266,6 +277,7 @@ def test_ask_uses_book_agent(monkeypatch, ask_client_ready_book):
             "currentParagraphId": "p-1",
             "currentReadingOrder": 5,
             "includeWholeBook": True,
+            "allowGeneralKnowledge": True,
             "history": [{"role": "user", "content": "earlier"}],
             "selectedText": "passage",
         },
@@ -275,3 +287,4 @@ def test_ask_uses_book_agent(monkeypatch, ask_client_ready_book):
     assert captured["history"] == [{"role": "user", "content": "earlier"}]
     assert captured["selected_text"] == "passage"
     assert captured["include_whole_book"] is True
+    assert captured["allow_general_knowledge"] is True

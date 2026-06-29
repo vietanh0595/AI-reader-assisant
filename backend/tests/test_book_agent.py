@@ -4,7 +4,12 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.retrieval.agent import BookAgent, MAX_TOOL_ROUNDS
+from backend.app.retrieval.agent import (
+    BookAgent,
+    HYBRID_SYSTEM_PROMPT,
+    MAX_TOOL_ROUNDS,
+    SYSTEM_PROMPT,
+)
 from backend.app.retrieval.answerer import ModelBookAnswer
 from backend.app.retrieval.models import EvidenceItem, EvidenceSet
 
@@ -149,6 +154,49 @@ def test_agent_includes_history_and_selection_in_input():
     assert "first q" in joined
     assert "first a" in joined
     assert "highlighted passage" in joined
+
+
+def test_grounded_mode_uses_strict_prompt_and_refuses_without_sources():
+    # Default (allow_general_knowledge=False): no citations -> refuse.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="E", body="B", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True)
+    assert client.calls[0]["instructions"] == SYSTEM_PROMPT
+    assert answer.supported is False
+    assert answer.sources == []
+
+
+def test_hybrid_mode_uses_hybrid_prompt():
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="E", body="B", citation_ids=["s0-0"])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                 selected_text=None, current_reading_order=0, include_whole_book=True,
+                 allow_general_knowledge=True)
+    assert client.calls[0]["instructions"] == HYBRID_SYSTEM_PROMPT
+
+
+def test_hybrid_mode_returns_general_knowledge_answer_without_book_sources():
+    # The book had nothing relevant, so the model answers from general knowledge
+    # with no citations. Hybrid mode must NOT refuse.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="Real-world", body="From general knowledge: ...",
+            citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True,
+                          allow_general_knowledge=True)
+    assert answer.supported is True
+    assert answer.body == "From general knowledge: ..."
+    assert answer.sources == []
 
 
 @dataclass

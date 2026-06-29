@@ -96,6 +96,7 @@ def ask_book(
         selected_text=ask_request.selected_text,
         current_reading_order=ask_request.current_reading_order,
         include_whole_book=ask_request.include_whole_book,
+        allow_general_knowledge=ask_request.allow_general_knowledge,
     )
 
     return BookAskResponse(

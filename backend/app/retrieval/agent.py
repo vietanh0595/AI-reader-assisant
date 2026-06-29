@@ -35,6 +35,23 @@ When you have enough evidence, answer. Set supported=false with an empty body if
 evidence does not support an answer. Cite only the source IDs present in search results.
 Cite at most 3. Keep the body under 1200 characters."""
 
+HYBRID_SYSTEM_PROMPT = """\
+You are a reading assistant. Answer the question by drawing on the book's evidence
+and, where helpful, real-world general knowledge.
+
+Use the same tools to gather book evidence:
+- read_current_context: the page the reader is currently on.
+- search_book: semantic + keyword search across the book.
+
+Guidelines:
+- Always search the book first and lead with what the book says.
+- You may ALSO add real-world examples or context beyond the book.
+- Clearly attribute each part: what comes from the book vs. general knowledge.
+- If the book has nothing relevant, you may still answer from general knowledge —
+  say so plainly. In that case set supported=true with no citations.
+- Cite book source IDs only for claims drawn from the book. Cite at most 3.
+- Keep the body under 1200 characters."""
+
 TOOLS = [
     {
         "type": "function",
@@ -67,17 +84,20 @@ class BookAgent:
 
     def answer(self, *, user_id: UUID, book_id: UUID, question: str,
                history: list[dict], selected_text: Optional[str],
-               current_reading_order: int, include_whole_book: bool) -> BookAnswer:
+               current_reading_order: int, include_whole_book: bool,
+               allow_general_knowledge: bool = False) -> BookAnswer:
         request_id = str(uuid.uuid4())
         max_reading_order = None if include_whole_book else current_reading_order
         evidence_by_id: dict[str, EvidenceItem] = {}
         input_items: list[Any] = self._build_input(history, question, selected_text)
 
         for round_index in range(MAX_TOOL_ROUNDS):
-            response = self._call(input_items, with_tools=True)
+            response = self._call(input_items, with_tools=True,
+                                  allow_general_knowledge=allow_general_knowledge)
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
             if not calls:
-                return self._finalize(request_id, response.output_parsed, evidence_by_id)
+                return self._finalize(request_id, response.output_parsed, evidence_by_id,
+                                      allow_general_knowledge=allow_general_knowledge)
             # Echo back ALL output items (reasoning + function calls), not just the
             # calls. Reasoning models (e.g. gpt-5-mini) pair each function_call with a
             # reasoning item; the Responses API rejects a function_call sent on the next
@@ -99,8 +119,10 @@ class BookAgent:
             "role": "user",
             "content": "Answer now using the evidence gathered so far. Do not call any more tools.",
         })
-        response = self._call(input_items, with_tools=False)
-        return self._finalize(request_id, response.output_parsed, evidence_by_id)
+        response = self._call(input_items, with_tools=False,
+                              allow_general_knowledge=allow_general_knowledge)
+        return self._finalize(request_id, response.output_parsed, evidence_by_id,
+                              allow_general_knowledge=allow_general_knowledge)
 
     def _build_input(self, history: list[dict], question: str, selected_text: Optional[str]) -> list[Any]:
         items: list[Any] = []
@@ -117,9 +139,11 @@ class BookAgent:
         items.append({"role": "user", "content": user_content})
         return items
 
-    def _call(self, input_items: list[Any], *, with_tools: bool):
+    def _call(self, input_items: list[Any], *, with_tools: bool,
+              allow_general_knowledge: bool = False):
+        instructions = HYBRID_SYSTEM_PROMPT if allow_general_knowledge else SYSTEM_PROMPT
         kwargs: dict[str, Any] = dict(
-            model=self._model, instructions=SYSTEM_PROMPT, input=input_items,
+            model=self._model, instructions=instructions, input=input_items,
             text_format=ModelBookAnswer, max_output_tokens=self._max_output_tokens,
         )
         if with_tools:
@@ -160,14 +184,17 @@ class BookAgent:
         return replace(item, source_id=sid)
 
     def _finalize(self, request_id: str, parsed: Optional[ModelBookAnswer],
-                  evidence_by_id: dict[str, EvidenceItem]) -> BookAnswer:
+                  evidence_by_id: dict[str, EvidenceItem],
+                  *, allow_general_knowledge: bool = False) -> BookAnswer:
         if parsed is None or not parsed.supported:
             return BookAnswer(request_id=request_id, eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
                               body=_INSUFFICIENT_EVIDENCE_BODY, supported=False, sources=[])
         evidence = EvidenceSet(items=list(evidence_by_id.values()), supported=True)
         valid_ids = set(evidence_by_id.keys())
         sources = _build_sources(parsed.citation_ids, evidence, valid_ids)
-        if not sources:
+        # In hybrid mode a general-knowledge answer may legitimately have no book
+        # citations; only the grounded path force-refuses when sources are empty.
+        if not sources and not allow_general_knowledge:
             return BookAnswer(request_id=request_id, eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
                               body=_INSUFFICIENT_EVIDENCE_BODY, supported=False, sources=[])
         return BookAnswer(request_id=request_id, eyebrow=parsed.eyebrow, body=parsed.body,

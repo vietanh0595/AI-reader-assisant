@@ -20,6 +20,7 @@ class BookAskRequest(BaseModel):
     current_reading_order: int = Field(alias="currentReadingOrder", ge=0)
     current_chapter_id: Optional[str] = Field(default=None, alias="currentChapterId", max_length=160)
     include_whole_book: bool = Field(default=False, alias="includeWholeBook")
+    allow_general_knowledge: bool = Field(default=False, alias="allowGeneralKnowledge")
     history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
     selected_text: Optional[str] = Field(default=None, alias="selectedText", max_length=4000)
 
