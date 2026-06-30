@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -100,6 +100,12 @@ interface ComputedLayout {
 
 type CanvasVariant = "tree" | "hub";
 
+export interface MindMapLiveState {
+  selectedNodeId: string | null;
+  selectedChapterId: string | null;
+  zoomStates: Record<string, { zoom: number; offsetX: number; offsetY: number }>;
+}
+
 export interface MindMapScreenProps {
   bookTitle: string;
   bookId: string;
@@ -114,6 +120,12 @@ export interface MindMapScreenProps {
   initialTab?: "concepts" | "chapters";
   initialOpenChapterId?: string | null;
   onNavigationChange?: (tab: "concepts" | "chapters", openChapterId: string | null) => void;
+  // Restored selection + zoom state from the previous session on this book.
+  initialSelectedNodeId?: string | null;
+  initialSelectedChapterId?: string | null;
+  initialZoomStates?: Record<string, { zoom: number; offsetX: number; offsetY: number }>;
+  // Ref written to on every render so App.tsx can capture state at close time.
+  liveStateRef?: MutableRefObject<MindMapLiveState>;
 }
 
 // ─── Layout computation ───────────────────────────────────────────────────────
@@ -335,6 +347,8 @@ function MindMapCanvas({
   centerSubLabel,
   onNodeTap,
   onCenterTap,
+  savedZoom,
+  onZoomChange,
 }: {
   data: MindMapData;
   variant: CanvasVariant;
@@ -342,6 +356,8 @@ function MindMapCanvas({
   centerSubLabel?: string | null;
   onNodeTap: (node: MindMapNode) => void;
   onCenterTap?: () => void;
+  savedZoom?: { zoom: number; offsetX: number; offsetY: number };
+  onZoomChange?: (zoom: number, offsetX: number, offsetY: number) => void;
 }) {
   const { width: screenW } = useWindowDimensions();
   const geometry = GEOMETRY;
@@ -356,7 +372,8 @@ function MindMapCanvas({
   );
 
   const mapWidth = geometry.r2 * 2 + geometry.l2W;
-  const initialZoom = clampN((screenW * 0.9) / mapWidth, MIN_ZOOM, 1);
+  const fitZoom = clampN((screenW * 0.9) / mapWidth, MIN_ZOOM, 1);
+  const initialZoom = savedZoom?.zoom ?? fitZoom;
 
   if (layout.l1Nodes.length === 0) {
     return (
@@ -380,6 +397,8 @@ function MindMapCanvas({
       contentWidth={size}
       contentHeight={size}
       initialZoom={initialZoom}
+      initialOffsetX={savedZoom?.offsetX ?? 0}
+      initialOffsetY={savedZoom?.offsetY ?? 0}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
       // A square map can't fill a portrait viewport without clipping, so don't
@@ -387,6 +406,8 @@ function MindMapCanvas({
       bindToBorders={false}
       doubleTapZoomToCenter={false}
       visualTouchFeedbackEnabled={false}
+      onZoomEnd={(_, __, e) => onZoomChange?.(e.zoomLevel, e.offsetX, e.offsetY)}
+      onShiftingEnd={(_, __, e) => onZoomChange?.(e.zoomLevel, e.offsetX, e.offsetY)}
     >
       <View style={{ width: size, height: size }}>
         <Svg
@@ -507,6 +528,10 @@ export function MindMapScreen({
   initialTab = "concepts",
   initialOpenChapterId = null,
   onNavigationChange,
+  initialSelectedNodeId = null,
+  initialSelectedChapterId = null,
+  initialZoomStates,
+  liveStateRef,
 }: MindMapScreenProps) {
   const [tab, setTab] = useState<"concepts" | "chapters">(initialTab);
   const [openChapter, setOpenChapter] = useState<MindMapChapter | null>(null);
@@ -528,6 +553,36 @@ export function MindMapScreen({
       pendingChapterId.current = null;
     }
   }, [data]);
+
+  // Restore open popup (node or chapter sheet) from previous session (one-shot).
+  const pendingNodeId = useRef(initialSelectedNodeId);
+  const pendingSheetChapterId = useRef(initialSelectedChapterId);
+  useEffect(() => {
+    if (!data) return;
+    if (pendingNodeId.current) {
+      const allNodes = [
+        ...data.nodes,
+        ...(data.chapters ?? []).flatMap((ch) => ch.nodes),
+      ];
+      const node = allNodes.find((n) => n.id === pendingNodeId.current) ?? null;
+      if (node) setSelectedNode(node);
+      pendingNodeId.current = null;
+    }
+    if (pendingSheetChapterId.current) {
+      const ch = (data.chapters ?? []).find((c) => c.id === pendingSheetChapterId.current) ?? null;
+      if (ch) setSelectedChapter(ch);
+      pendingSheetChapterId.current = null;
+    }
+  }, [data]);
+
+  // Keep liveStateRef current at every render so App.tsx can capture selection
+  // and zoom at close time. Written synchronously (not in an effect) so the value
+  // is available even before a queued setState has been applied — this is what
+  // preserves the node that was selected when the user tapped a quick-ask chip.
+  if (liveStateRef) {
+    liveStateRef.current.selectedNodeId = selectedNode?.id ?? null;
+    liveStateRef.current.selectedChapterId = selectedChapter?.id ?? null;
+  }
 
   const chaptersData = useMemo(
     () => (hasChapters ? chaptersToData(chapters, genre) : null),
@@ -554,6 +609,21 @@ export function MindMapScreen({
   };
 
   const isChapterOverview = tab === "chapters" && openChapter === null;
+
+  // Canvas keys mirror the ReactNativeZoomableView `key` prop so zoom state is
+  // saved and restored per logical canvas.
+  const conceptsCanvasKey = "tree" + bookTitle;
+  const chaptersCanvasKey = "hub" + bookTitle;
+  const chapterDrillKey = openChapter
+    ? "tree" + (openChapter.title ?? `Chapter ${openChapter.index}`)
+    : null;
+
+  const makeZoomHandler = (key: string) =>
+    (zoom: number, offsetX: number, offsetY: number) => {
+      if (liveStateRef) {
+        liveStateRef.current.zoomStates[key] = { zoom, offsetX, offsetY };
+      }
+    };
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -657,6 +727,8 @@ export function MindMapScreen({
                 centerSubLabel={`${openChapter.nodes.length} concepts`}
                 onNodeTap={setSelectedNode}
                 onCenterTap={() => setSelectedChapter(openChapter)}
+                savedZoom={chapterDrillKey ? initialZoomStates?.[chapterDrillKey] : undefined}
+                onZoomChange={chapterDrillKey ? makeZoomHandler(chapterDrillKey) : undefined}
               />
             ) : isChapterOverview && chaptersData ? (
               <MindMapCanvas
@@ -668,6 +740,8 @@ export function MindMapScreen({
                   const ch = chapters.find((c) => c.id === node.id) ?? null;
                   setSelectedChapter(ch);
                 }}
+                savedZoom={initialZoomStates?.[chaptersCanvasKey]}
+                onZoomChange={makeZoomHandler(chaptersCanvasKey)}
               />
             ) : (
               <MindMapCanvas
@@ -676,6 +750,8 @@ export function MindMapScreen({
                 centerLabel={bookTitle}
                 centerSubLabel={genre || null}
                 onNodeTap={setSelectedNode}
+                savedZoom={initialZoomStates?.[conceptsCanvasKey]}
+                onZoomChange={makeZoomHandler(conceptsCanvasKey)}
               />
             )
           ) : null}

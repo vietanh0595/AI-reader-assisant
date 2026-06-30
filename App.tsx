@@ -2417,6 +2417,17 @@ function ReaderApp() {
   // Navigation state lifted so it survives close/reopen for the same book.
   const [mindMapNavTab, setMindMapNavTab] = useState<'concepts' | 'chapters'>('concepts');
   const [mindMapNavOpenChapterId, setMindMapNavOpenChapterId] = useState<string | null>(null);
+  // Selection + zoom state restored when the map reopens for the same book.
+  const [mindMapSavedNodeId, setMindMapSavedNodeId] = useState<string | null>(null);
+  const [mindMapSavedChapterId, setMindMapSavedChapterId] = useState<string | null>(null);
+  const [mindMapSavedZooms, setMindMapSavedZooms] = useState<Record<string, { zoom: number; offsetX: number; offsetY: number }>>({});
+  // Written synchronously by MindMapScreen on every render so closeMindMap() can
+  // capture the live state (including selection that hasn't been cleared yet).
+  const mindMapLiveRef = useRef<import('./src/components/MindMapScreen').MindMapLiveState>({
+    selectedNodeId: null,
+    selectedChapterId: null,
+    zoomStates: {},
+  });
   // Set when the user jumps to a passage from the mind map; drives the "← Map" return chip.
   const [mindMapReturnBookId, setMindMapReturnBookId] = useState<string | null>(null);
   // A quick-ask question queued from a mind-map tap sheet. Fired once the target book
@@ -3507,10 +3518,14 @@ function ReaderApp() {
     const libraryItem = libraryItems.find((item) => item.id === bookId);
     const cloudBookId = libraryItem ? resolveMindMapBookId(bookId, libraryItem.wholeBookAi) : null;
 
-    // Reset nav state when opening a different book; preserve it for the same book.
+    // Reset nav + selection state when opening a different book; preserve for same book.
     if (bookId !== mindMapBookId) {
       setMindMapNavTab('concepts');
       setMindMapNavOpenChapterId(null);
+      setMindMapSavedNodeId(null);
+      setMindMapSavedChapterId(null);
+      setMindMapSavedZooms({});
+      mindMapLiveRef.current = { selectedNodeId: null, selectedChapterId: null, zoomStates: {} };
     }
     // Clear the return-chip context — user explicitly opened the map.
     setMindMapReturnBookId(null);
@@ -3596,6 +3611,12 @@ function ReaderApp() {
       clearInterval(mindMapPollRef.current);
       mindMapPollRef.current = null;
     }
+    // Snapshot live selection + zoom so they survive the unmount and can be
+    // restored when the map reopens for the same book.
+    const live = mindMapLiveRef.current;
+    setMindMapSavedNodeId(live.selectedNodeId);
+    setMindMapSavedChapterId(live.selectedChapterId);
+    setMindMapSavedZooms({ ...live.zoomStates });
     setMindMapOpen(false);
   }
 
@@ -3834,6 +3855,10 @@ function ReaderApp() {
             setMindMapNavTab(tab);
             setMindMapNavOpenChapterId(openChapterId);
           }}
+          initialSelectedNodeId={mindMapSavedNodeId}
+          initialSelectedChapterId={mindMapSavedChapterId}
+          initialZoomStates={mindMapSavedZooms}
+          liveStateRef={mindMapLiveRef}
           onClose={closeMindMap}
           onRetry={() => {
             setMindMapStatus('generating');
