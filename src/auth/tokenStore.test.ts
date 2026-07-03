@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import type { PersistedAuthSession } from './types';
-import { clearAuthSession, readAuthSession, writeAuthSession } from './tokenStore';
+import { clearAuthSession, readAuthSession, readHasEverSignedIn, writeAuthSession, writeHasEverSignedIn } from './tokenStore';
 
 jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(),
@@ -66,5 +66,24 @@ describe('tokenStore', () => {
 
     await expect(readAuthSession()).resolves.toBeNull();
     expect(secureStore.deleteItemAsync).toHaveBeenCalledWith(SESSION_KEY);
+  });
+
+  test('reads hasEverSignedIn as false when it has never been written', async () => {
+    secureStore.getItemAsync.mockResolvedValue(null);
+
+    await expect(readHasEverSignedIn()).resolves.toBe(false);
+    expect(secureStore.getItemAsync).toHaveBeenCalledWith('ai-reader-has-signed-in');
+  });
+
+  test('reads hasEverSignedIn as true once it has been written', async () => {
+    secureStore.getItemAsync.mockResolvedValue('true');
+
+    await expect(readHasEverSignedIn()).resolves.toBe(true);
+  });
+
+  test('writes hasEverSignedIn', async () => {
+    await writeHasEverSignedIn();
+
+    expect(secureStore.setItemAsync).toHaveBeenCalledWith('ai-reader-has-signed-in', 'true');
   });
 });

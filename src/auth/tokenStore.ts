@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { PersistedAuthSession } from './types';
 
 const AUTH_SESSION_KEY = 'ai-reader-auth-session';
+const HAS_SIGNED_IN_KEY = 'ai-reader-has-signed-in';
 
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string';
@@ -72,4 +73,13 @@ export async function writeAuthSession(session: PersistedAuthSession): Promise<v
 
 export async function clearAuthSession(): Promise<void> {
   await SecureStore.deleteItemAsync(AUTH_SESSION_KEY);
+}
+
+export async function readHasEverSignedIn(): Promise<boolean> {
+  const storedValue = await SecureStore.getItemAsync(HAS_SIGNED_IN_KEY);
+  return storedValue === 'true';
+}
+
+export async function writeHasEverSignedIn(): Promise<void> {
+  await SecureStore.setItemAsync(HAS_SIGNED_IN_KEY, 'true');
 }
