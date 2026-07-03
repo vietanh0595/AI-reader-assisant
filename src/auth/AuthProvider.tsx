@@ -11,7 +11,13 @@ import React, {
 } from 'react';
 
 import { getOidcClientConfig, type OidcClientConfig } from './config';
-import { clearAuthSession, readAuthSession, writeAuthSession } from './tokenStore';
+import {
+  clearAuthSession,
+  readAuthSession,
+  readHasEverSignedIn,
+  writeAuthSession,
+  writeHasEverSignedIn,
+} from './tokenStore';
 import type { AuthContextValue, PersistedAuthSession } from './types';
 
 const REDIRECT_SCHEME = 'aibookreader';
@@ -48,18 +54,21 @@ function UnconfiguredAuthProvider({ children }: PropsWithChildren) {
     await clearAuthSession();
     setError(null);
   }, []);
+  const dismissSessionExpiredNotice = useCallback(() => {}, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken: null,
+      dismissSessionExpiredNotice,
       error,
       getAccessToken,
       isAuthenticated: false,
       isLoading: false,
+      sessionExpired: false,
       signIn,
       signOut,
     }),
-    [error, getAccessToken, signIn, signOut],
+    [dismissSessionExpiredNotice, error, getAccessToken, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -86,15 +95,21 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
   const [session, setSession] = useState<PersistedAuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasEverSignedIn, setHasEverSignedIn] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const mountedRef = useRef(true);
   const mutationVersionRef = useRef(0);
   const sessionRef = useRef<PersistedAuthSession | null>(null);
   const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
 
   const updateSession = useCallback((nextSession: PersistedAuthSession | null) => {
+    const wasAuthenticated = sessionRef.current !== null;
     sessionRef.current = nextSession;
     if (mountedRef.current) {
       setSession(nextSession);
+      if (!wasAuthenticated && nextSession !== null) {
+        setDismissed(false);
+      }
     }
   }, []);
 
@@ -125,6 +140,18 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
       mountedRef.current = false;
     };
   }, [updateSession]);
+
+  useEffect(() => {
+    let active = true;
+    void readHasEverSignedIn().then((value) => {
+      if (active) {
+        setHasEverSignedIn(value);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const expireSession = useCallback(async (): Promise<null> => {
     mutationVersionRef.current += 1;
@@ -261,6 +288,8 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
       }
 
       updateSession(nextSession);
+      setHasEverSignedIn(true);
+      void writeHasEverSignedIn();
     } catch (signInError) {
       if (mountedRef.current && signInVersion === mutationVersionRef.current) {
         setError(signInError instanceof Error ? signInError.message : 'Sign-in failed.');
@@ -277,17 +306,34 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
     await clearAuthSession();
   }, [updateSession]);
 
+  const dismissSessionExpiredNotice = useCallback(() => {
+    setDismissed(true);
+  }, []);
+
+  const sessionExpired = hasEverSignedIn && session === null && !isLoading && !dismissed;
+
   const value = useMemo<AuthContextValue>(
     () => ({
       accessToken: session?.accessToken ?? null,
+      dismissSessionExpiredNotice,
       error,
       getAccessToken,
       isAuthenticated: session !== null,
       isLoading,
+      sessionExpired,
       signIn,
       signOut,
     }),
-    [error, getAccessToken, isLoading, session, signIn, signOut],
+    [
+      dismissSessionExpiredNotice,
+      error,
+      getAccessToken,
+      isLoading,
+      session,
+      sessionExpired,
+      signIn,
+      signOut,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

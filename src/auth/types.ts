@@ -11,10 +11,12 @@ export type PersistedAuthSession = {
 
 export type AuthContextValue = {
   accessToken: string | null;
+  dismissSessionExpiredNotice(): void;
   error: string | null;
   getAccessToken(forceRefresh?: boolean): Promise<string | null>;
   isAuthenticated: boolean;
   isLoading: boolean;
+  sessionExpired: boolean;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
 };

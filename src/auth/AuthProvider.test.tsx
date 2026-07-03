@@ -26,17 +26,26 @@ jest.mock('expo-auth-session', () => ({
 jest.mock('./tokenStore', () => ({
   clearAuthSession: jest.fn(),
   readAuthSession: jest.fn(),
+  readHasEverSignedIn: jest.fn(),
   writeAuthSession: jest.fn(),
+  writeHasEverSignedIn: jest.fn(),
 }));
 
 const { AuthProvider, useAuth } = require('./AuthProvider') as typeof import('./AuthProvider');
-const { clearAuthSession, readAuthSession, writeAuthSession } =
-  require('./tokenStore') as typeof import('./tokenStore');
+const {
+  clearAuthSession,
+  readAuthSession,
+  readHasEverSignedIn,
+  writeAuthSession,
+  writeHasEverSignedIn,
+} = require('./tokenStore') as typeof import('./tokenStore');
 
 const tokenStore = {
   clear: jest.mocked(clearAuthSession),
   read: jest.mocked(readAuthSession),
+  readHasEverSignedIn: jest.mocked(readHasEverSignedIn),
   write: jest.mocked(writeAuthSession),
+  writeHasEverSignedIn: jest.mocked(writeHasEverSignedIn),
 };
 
 const discovery = {
@@ -65,11 +74,15 @@ function AuthConsumer() {
       <Text testID="access-token">{auth.accessToken ?? 'null'}</Text>
       <Text testID="error">{auth.error ?? 'null'}</Text>
       <Text testID="resolved-token">{resolvedToken}</Text>
+      <Text testID="session-expired">{String(auth.sessionExpired)}</Text>
       <Pressable onPress={() => void auth.signIn()}>
         <Text>Sign in</Text>
       </Pressable>
       <Pressable onPress={() => void auth.signOut()}>
         <Text>Sign out</Text>
+      </Pressable>
+      <Pressable onPress={() => auth.dismissSessionExpiredNotice()}>
+        <Text>Dismiss session notice</Text>
       </Pressable>
       <Pressable
         onPress={() => {
@@ -121,6 +134,9 @@ describe('AuthProvider', () => {
     tokenStore.read.mockResolvedValue(null);
     tokenStore.write.mockResolvedValue();
     tokenStore.clear.mockResolvedValue();
+    tokenStore.readHasEverSignedIn.mockResolvedValue(false);
+    tokenStore.writeHasEverSignedIn.mockResolvedValue();
+    mockIsTokenFresh.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -372,6 +388,78 @@ describe('AuthProvider', () => {
         refreshToken: 'signed-in-refresh-token',
       }),
     );
+  });
+
+  test('does not mark the session as expired for a guest who has never signed in', async () => {
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loading').props.children).toBe('false'));
+
+    expect(screen.getByTestId('authenticated').props.children).toBe('false');
+    expect(screen.getByTestId('session-expired').props.children).toBe('false');
+  });
+
+  test('marks the session expired after a previously signed-in session fails to refresh', async () => {
+    mockPromptAsync.mockResolvedValue({
+      type: 'success',
+      params: { code: 'authorization-code' },
+    });
+    mockExchangeCodeAsync.mockResolvedValue({
+      accessToken: 'signed-in-access-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_300,
+      refreshToken: 'signed-in-refresh-token',
+      tokenType: 'bearer',
+    });
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loading').props.children).toBe('false'));
+
+    await fireEvent.press(screen.getByText('Sign in'));
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+    expect(tokenStore.writeHasEverSignedIn).toHaveBeenCalled();
+    expect(screen.getByTestId('session-expired').props.children).toBe('false');
+
+    mockIsTokenFresh.mockReturnValue(false);
+    mockRefreshAsync.mockRejectedValue(new Error('refresh rejected'));
+    await fireEvent.press(screen.getByText('Get token'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated').props.children).toBe('false');
+      expect(screen.getByTestId('session-expired').props.children).toBe('true');
+    });
+  });
+
+  test('dismissing the notice hides it until a subsequent sign-in re-arms it', async () => {
+    tokenStore.read.mockResolvedValue(freshSession);
+    tokenStore.readHasEverSignedIn.mockResolvedValue(true);
+    mockIsTokenFresh.mockReturnValue(false);
+    mockRefreshAsync.mockRejectedValue(new Error('refresh rejected'));
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loading').props.children).toBe('false'));
+
+    await fireEvent.press(screen.getByText('Get token'));
+    await waitFor(() => expect(screen.getByTestId('session-expired').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Dismiss session notice'));
+    expect(screen.getByTestId('session-expired').props.children).toBe('false');
+
+    mockPromptAsync.mockResolvedValue({
+      type: 'success',
+      params: { code: 'authorization-code' },
+    });
+    mockExchangeCodeAsync.mockResolvedValue({
+      accessToken: 'new-access-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_500,
+      refreshToken: 'new-refresh-token',
+      tokenType: 'bearer',
+    });
+    await fireEvent.press(screen.getByText('Sign in'));
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    mockRefreshAsync.mockRejectedValue(new Error('refresh rejected again'));
+    await fireEvent.press(screen.getByText('Get token'));
+
+    await waitFor(() => expect(screen.getByTestId('session-expired').props.children).toBe('true'));
   });
 });
 
