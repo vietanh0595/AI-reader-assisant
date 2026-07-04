@@ -338,6 +338,20 @@ describe('AuthProvider', () => {
     expect(tokenStore.clear).toHaveBeenCalled();
   });
 
+  test('does not show the expired notice right after a deliberate sign-out', async () => {
+    tokenStore.read.mockResolvedValue(freshSession);
+    tokenStore.readHasEverSignedIn.mockResolvedValue(true);
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Sign out'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated').props.children).toBe('false');
+      expect(screen.getByTestId('session-expired').props.children).toBe('false');
+    });
+  });
+
   test('exchanges a successful authorization code and persists the token', async () => {
     mockPromptAsync.mockResolvedValue({
       type: 'success',

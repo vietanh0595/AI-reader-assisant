@@ -302,6 +302,7 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
     updateSession(null);
     if (mountedRef.current) {
       setError(null);
+      setDismissed(true);
     }
     await clearAuthSession();
   }, [updateSession]);
