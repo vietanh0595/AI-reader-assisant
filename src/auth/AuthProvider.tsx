@@ -9,6 +9,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 
 import { getOidcClientConfig, type OidcClientConfig } from './config';
 import {
@@ -237,6 +238,21 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
     },
     [config.clientId, config.scopes, discovery, expireSession, updateSession],
   );
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+    void getAccessToken();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void getAccessToken();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [getAccessToken, isLoading]);
 
   const signIn = useCallback(async () => {
     if (!request || !request.codeVerifier || !discovery?.tokenEndpoint) {

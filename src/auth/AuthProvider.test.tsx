@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { AppState, Pressable, Text, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import type { PersistedAuthSession } from './types';
@@ -336,6 +336,60 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('access-token').props.children).toBe('null');
     });
     expect(tokenStore.clear).toHaveBeenCalled();
+  });
+
+  test('runs a silent refresh at launch without any user action', async () => {
+    tokenStore.read.mockResolvedValue(freshSession);
+    mockIsTokenFresh.mockReturnValue(false);
+    mockRefreshAsync.mockResolvedValue({
+      accessToken: 'launch-refreshed-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_600,
+      tokenType: 'bearer',
+    });
+    const screen = await renderProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-token').props.children).toBe('launch-refreshed-token');
+    });
+    expect(mockRefreshAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test('runs a silent refresh again when the app returns to the foreground', async () => {
+    tokenStore.read.mockResolvedValue(freshSession);
+    mockIsTokenFresh.mockReturnValue(false);
+    mockRefreshAsync.mockResolvedValueOnce({
+      accessToken: 'first-refresh-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_700,
+      tokenType: 'bearer',
+    });
+    const screen = await renderProvider();
+    await waitFor(() => expect(mockRefreshAsync).toHaveBeenCalledTimes(1));
+
+    mockRefreshAsync.mockResolvedValueOnce({
+      accessToken: 'foregrounded-refresh-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_800,
+      tokenType: 'bearer',
+    });
+    const changeHandler = jest.mocked(AppState.addEventListener).mock.calls.at(-1)![1];
+    await act(async () => {
+      changeHandler('active');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-token').props.children).toBe('foregrounded-refresh-token');
+    });
+    expect(mockRefreshAsync).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not attempt a refresh at launch when there is no stored session', async () => {
+    tokenStore.read.mockResolvedValue(null);
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loading').props.children).toBe('false'));
+
+    expect(mockRefreshAsync).not.toHaveBeenCalled();
   });
 
   test('does not show the expired notice right after a deliberate sign-out', async () => {
