@@ -37,6 +37,7 @@ import { AuthProvider, useAuth } from './src/auth/AuthProvider';
 import { BookSources } from './src/components/BookSources';
 import { ConversationThread } from './src/components/ConversationThread';
 import { MindMapScreen } from './src/components/MindMapScreen';
+import { SessionExpiredBanner } from './src/components/SessionExpiredBanner';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
@@ -2365,7 +2366,16 @@ function getReaderHtmlTag(blockKind: ReaderBlockKind) {
 }
 
 function ReaderApp() {
-  const { error: authError, getAccessToken, isAuthenticated, isLoading: isAuthLoading, signIn, signOut } = useAuth();
+  const {
+    error: authError,
+    getAccessToken,
+    isAuthenticated,
+    isLoading: isAuthLoading,
+    sessionExpired,
+    dismissSessionExpiredNotice,
+    signIn,
+    signOut,
+  } = useAuth();
   const [pendingAuthenticatedAction, setPendingAuthenticatedAction] = useState<'import' | 'scan' | null>(null);
   const [isSignInOpen, setIsSignInOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -3820,6 +3830,12 @@ function ReaderApp() {
           onRetry={() => { void runIndexBook(); }}
         />
       ) : null}
+
+      <SessionExpiredBanner
+        onDismiss={dismissSessionExpiredNotice}
+        onSignIn={() => setIsSignInOpen(true)}
+        sessionExpired={sessionExpired && !isSignInOpen}
+      />
 
       {isSignInOpen ? (
         <SignInSheet
