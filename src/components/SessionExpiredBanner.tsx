@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type SessionExpiredBannerProps = {
   sessionExpired: boolean;
@@ -11,12 +12,14 @@ export function SessionExpiredBanner({
   onDismiss,
   onSignIn,
 }: SessionExpiredBannerProps) {
+  const insets = useSafeAreaInsets();
+
   if (!sessionExpired) {
     return null;
   }
 
   return (
-    <View style={styles.banner}>
+    <View style={[styles.banner, { paddingTop: insets.top + 12 }]}>
       <Text style={styles.text}>
         Your sign-in has expired. Sign in again to ask questions and sync your library.
       </Text>
