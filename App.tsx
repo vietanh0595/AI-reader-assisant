@@ -2443,6 +2443,9 @@ function ReaderApp() {
   // A quick-ask question queued from a mind-map tap sheet. Fired once the target book
   // becomes active (book switch + conversation state are tied to activeBookId).
   const [pendingQuickAsk, setPendingQuickAsk] = useState<{ bookId: string; question: string; allowGeneralKnowledge: boolean } | null>(null);
+  // Set when the mind map is tapped for a book that isn't ready yet; drives the
+  // WholeBookAiSheet redirect and the auto-continue effect below.
+  const [pendingMindMapAfterEnable, setPendingMindMapAfterEnable] = useState<{ bookId: string; bookTitle: string } | null>(null);
 
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2901,6 +2904,25 @@ function ReaderApp() {
     void runBookAsk(question, undefined, { allowGeneralKnowledge });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingQuickAsk, activeBookId, activeLibraryItem]);
+
+  // Continue into mind map generation once Whole-Book AI finishes enabling, when
+  // the enable flow was triggered by tapping the mind map itself (not the Ask flow).
+  useEffect(() => {
+    if (!pendingMindMapAfterEnable) {
+      return;
+    }
+    if (activeBookId !== pendingMindMapAfterEnable.bookId) {
+      return;
+    }
+    if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+      return;
+    }
+    const { bookId, bookTitle } = pendingMindMapAfterEnable;
+    setPendingMindMapAfterEnable(null);
+    setIsWholeBookAiOpen(false);
+    void openMindMap(bookId, bookTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingMindMapAfterEnable, activeBookId, activeLibraryItem]);
 
   function chooseAction(action: SelectionAction) {
     if (action === 'copy') {
@@ -3517,6 +3539,17 @@ function ReaderApp() {
   }
 
   async function openMindMap(bookId: string, bookTitle: string, options: { forceGenerate?: boolean } = {}) {
+    const libraryItem = libraryItems.find((item) => item.id === bookId);
+
+    if (!libraryItem || libraryItem.wholeBookAi.status !== 'ready') {
+      if (bookId !== activeBookId) {
+        openLibraryItem(bookId);
+      }
+      setPendingMindMapAfterEnable({ bookId, bookTitle });
+      setIsWholeBookAiOpen(true);
+      return;
+    }
+
     // Clear any existing poll interval before starting a new one (fix: interval leak on retry)
     if (mindMapPollRef.current) {
       clearInterval(mindMapPollRef.current);
@@ -3525,8 +3558,7 @@ function ReaderApp() {
     // Mark any previous openMindMap call as cancelled (fix: stale async race after close)
     mindMapCancelRef.current = false;
     const cancelled = () => mindMapCancelRef.current;
-    const libraryItem = libraryItems.find((item) => item.id === bookId);
-    const cloudBookId = libraryItem ? resolveMindMapBookId(bookId, libraryItem.wholeBookAi) : null;
+    const cloudBookId = resolveMindMapBookId(bookId, libraryItem.wholeBookAi);
 
     // Reset nav + selection state when opening a different book; preserve for same book.
     if (bookId !== mindMapBookId) {
@@ -3548,8 +3580,11 @@ function ReaderApp() {
     setMindMapOpen(true);
 
     if (!cloudBookId) {
+      // Shouldn't happen — status is 'ready' only once cloudBookId is set alongside
+      // it — but keep this as a type-narrowing guard and fail safe rather than call
+      // the API with a null id.
       setMindMapStatus('failed');
-      setMindMapError('Upload this book for Whole-Book AI before generating a mind map.');
+      setMindMapError('Failed to load mind map');
       return;
     }
 
@@ -3825,7 +3860,10 @@ function ReaderApp() {
       {isWholeBookAiOpen ? (
         <WholeBookAiSheet
           state={activeLibraryItem.wholeBookAi}
-          onClose={() => setIsWholeBookAiOpen(false)}
+          onClose={() => {
+            setIsWholeBookAiOpen(false);
+            setPendingMindMapAfterEnable(null);
+          }}
           onEnable={() => { void runIndexBook(); }}
           onRetry={() => { void runIndexBook(); }}
         />
