@@ -54,6 +54,7 @@ import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } fro
 import { appendTurns } from './src/library/appendTurn';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   NativeModules,
   Platform,
@@ -2935,6 +2936,77 @@ function ReaderApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingMindMapAfterEnable, activeBookId, activeLibraryItem]);
 
+  // Mirrors libraryItems/mindMapOpen/mindMapBookId so checkBackgroundJobs and its
+  // "is this book being watched live" check always read current values, without
+  // needing them in the effect's dependency array below — that would tear down and
+  // re-subscribe the AppState listener far more often than a launch/foreground tick.
+  const libraryItemsRef = useRef(libraryItems);
+  libraryItemsRef.current = libraryItems;
+  const mindMapOpenRef = useRef(mindMapOpen);
+  mindMapOpenRef.current = mindMapOpen;
+  const mindMapBookIdRef = useRef(mindMapBookId);
+  mindMapBookIdRef.current = mindMapBookId;
+
+  async function checkBackgroundJobs() {
+    const token = await getAccessToken();
+    if (!token) {
+      return;
+    }
+    for (const item of libraryItemsRef.current) {
+      if (
+        item.wholeBookAi.status === 'uploading' ||
+        item.wholeBookAi.status === 'queued' ||
+        item.wholeBookAi.status === 'indexing'
+      ) {
+        void runIndexBookFor(item);
+      }
+
+      if (item.mindMapJob?.status === 'generating' && item.wholeBookAi.cloudBookId) {
+        const isBeingWatched =
+          mindMapOpenRef.current && mindMapBookIdRef.current === item.id;
+        try {
+          const result = await getMindMap(apiBaseUrl, item.wholeBookAi.cloudBookId, token);
+          if (result.status !== 'generating' && result.status !== 'pending') {
+            const resolvedStatus: 'ready' | 'failed' = result.status === 'ready' ? 'ready' : 'failed';
+            const bookId = item.id;
+            setLibraryItems((items) =>
+              items.map((i) =>
+                i.id === bookId
+                  ? {
+                      ...i,
+                      mindMapJob: { status: resolvedStatus },
+                      pendingNotice: isBeingWatched
+                        ? i.pendingNotice
+                        : { kind: 'mindmap', status: resolvedStatus, notifiedAt: new Date().toISOString() },
+                    }
+                  : i,
+              ),
+            );
+          }
+        } catch {
+          // Leave the job as 'generating' — it'll be checked again on the next
+          // launch/foreground tick.
+        }
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      return;
+    }
+    void checkBackgroundJobs();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void checkBackgroundJobs();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading]);
+
   function chooseAction(action: SelectionAction) {
     if (action === 'copy') {
       void copySelectionToClipboard();
@@ -3654,6 +3726,11 @@ function ReaderApp() {
       if (cancelled()) return;
 
       setMindMapStatus('generating');
+      setLibraryItems((items) =>
+        items.map((item) =>
+          item.id === bookId ? { ...item, mindMapJob: { status: 'generating' } } : item,
+        ),
+      );
 
       // Poll every 3 seconds
       mindMapPollRef.current = setInterval(async () => {
