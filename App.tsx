@@ -2396,6 +2396,14 @@ function ReaderApp() {
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [isSavedNotesOpen, setIsSavedNotesOpen] = useState(false);
   const [isWholeBookAiOpen, setIsWholeBookAiOpen] = useState(false);
+  // Read inside runIndexBookFor's async resolution to decide whether the sheet is
+  // currently showing this exact book's result live (skip the notice if so) — refs
+  // avoid stale closures, since the indexing promise can resolve long after the user
+  // has navigated to a different book or closed the sheet.
+  const isWholeBookAiOpenRef = useRef(isWholeBookAiOpen);
+  isWholeBookAiOpenRef.current = isWholeBookAiOpen;
+  const activeBookIdRef = useRef(activeBookId);
+  activeBookIdRef.current = activeBookId;
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<ScrollTarget | null>(null);
   const [isStorageReady, setIsStorageReady] = useState(false);
@@ -3444,7 +3452,7 @@ function ReaderApp() {
     }
   }
 
-  async function runIndexBook() {
+  async function runIndexBookFor(libraryItem: LibraryItem) {
     const token = await getAccessToken();
     if (!token) {
       // Close the Book AI sheet first so the sign-in prompt isn't hidden behind it.
@@ -3462,12 +3470,13 @@ function ReaderApp() {
       },
     };
     const api = createIndexApi(client);
+    const book = libraryItem.book;
 
-    const bookParagraphs = currentBook.paragraphs.map((p) => ({
+    const bookParagraphs = book.paragraphs.map((p) => ({
       id: p.id,
       blockKind: (p.blockKind ?? 'body') as import('./src/rag/types').UploadBlock['blockKind'],
       text: p.segments.map((s) => s.text).join(''),
-      sourceRef: p.sourceRef ?? { source: currentBook.source === 'sample' ? 'epub' : (currentBook.source as import('./src/rag/types').DocumentSource) },
+      sourceRef: p.sourceRef ?? { source: book.source === 'sample' ? 'epub' : (book.source as import('./src/rag/types').DocumentSource) },
       chapterId: undefined as string | undefined,
       chapterTitle: undefined as string | undefined,
     }));
@@ -3476,19 +3485,19 @@ function ReaderApp() {
     let chapterIdx = 0;
     for (let i = 0; i < bookParagraphs.length; i++) {
       while (
-        chapterIdx + 1 < currentBook.chapters.length &&
-        currentBook.paragraphs.findIndex((p) => p.id === currentBook.chapters[chapterIdx + 1].paragraphId) <= i
+        chapterIdx + 1 < book.chapters.length &&
+        book.paragraphs.findIndex((p) => p.id === book.chapters[chapterIdx + 1].paragraphId) <= i
       ) {
         chapterIdx++;
       }
-      const chapter = currentBook.chapters[chapterIdx];
+      const chapter = book.chapters[chapterIdx];
       if (chapter) {
         bookParagraphs[i].chapterId = chapter.id;
         bookParagraphs[i].chapterTitle = chapter.title;
       }
     }
 
-    const activeId = activeLibraryItem.id;
+    const activeId = libraryItem.id;
     setLibraryItems((items) =>
       items.map((item) =>
         item.id === activeId
@@ -3498,18 +3507,21 @@ function ReaderApp() {
     );
     // Keep the sheet open so the user sees Uploading → Indexing → Ready progress.
 
+    const isBeingWatched = () =>
+      isWholeBookAiOpenRef.current && activeBookIdRef.current === activeId;
+
     try {
       const nextState = await indexBook({
         api,
         book: {
           paragraphs: bookParagraphs,
-          title: currentBook.title,
-          author: currentBook.author,
-          source: currentBook.source === 'sample' ? 'epub' : (currentBook.source as 'epub' | 'pdf' | 'scan'),
-          clientBookId: activeLibraryItem.id,
-          fileName: currentBook.fileName,
+          title: book.title,
+          author: book.author,
+          source: book.source === 'sample' ? 'epub' : (book.source as 'epub' | 'pdf' | 'scan'),
+          clientBookId: libraryItem.id,
+          fileName: book.fileName,
         },
-        localState: activeLibraryItem.wholeBookAi.cloudBookId ? activeLibraryItem.wholeBookAi : null,
+        localState: libraryItem.wholeBookAi.cloudBookId ? libraryItem.wholeBookAi : null,
         onProgress: (progress) => {
           setLibraryItems((items) =>
             items.map((item) =>
@@ -3523,7 +3535,19 @@ function ReaderApp() {
 
       setLibraryItems((items) =>
         items.map((item) =>
-          item.id === activeId ? { ...item, wholeBookAi: nextState } : item,
+          item.id === activeId
+            ? {
+                ...item,
+                wholeBookAi: nextState,
+                pendingNotice: isBeingWatched()
+                  ? item.pendingNotice
+                  : {
+                      kind: 'indexing',
+                      status: nextState.status === 'ready' ? 'ready' : 'failed',
+                      notifiedAt: new Date().toISOString(),
+                    },
+              }
+            : item,
         ),
       );
     } catch (error) {
@@ -3534,11 +3558,21 @@ function ReaderApp() {
       setLibraryItems((items) =>
         items.map((item) =>
           item.id === activeId
-            ? { ...item, wholeBookAi: { ...item.wholeBookAi, status: 'failed', error: message } }
+            ? {
+                ...item,
+                wholeBookAi: { ...item.wholeBookAi, status: 'failed', error: message },
+                pendingNotice: isBeingWatched()
+                  ? item.pendingNotice
+                  : { kind: 'indexing', status: 'failed', notifiedAt: new Date().toISOString() },
+              }
             : item,
         ),
       );
     }
+  }
+
+  async function runIndexBook() {
+    return runIndexBookFor(activeLibraryItem);
   }
 
   async function openMindMap(bookId: string, bookTitle: string, options: { forceGenerate?: boolean } = {}) {
