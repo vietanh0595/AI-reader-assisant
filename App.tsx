@@ -49,6 +49,7 @@ import { buildHistory } from './src/rag/buildHistory';
 import { createIndexApi } from './src/rag/indexApi';
 import { indexBook } from './src/rag/indexBook';
 import type { WholeBookAiState } from './src/rag/types';
+import { selectPendingNotice, type PersistedPendingNotice } from './src/rag/backgroundNotice';
 import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
 import { appendTurns } from './src/library/appendTurn';
 import {
@@ -221,6 +222,8 @@ type LibraryItem = {
   id: string;
   importedAt: string;
   lastOpenedAt: string;
+  mindMapJob?: { status: 'generating' | 'ready' | 'failed' };
+  pendingNotice?: PersistedPendingNotice;
   readingLocation: ReadingLocation | null;
   savedInsights: SavedInsight[];
   wholeBookAi: WholeBookAiState;
