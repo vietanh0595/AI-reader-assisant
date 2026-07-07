@@ -38,6 +38,7 @@ import { BookSources } from './src/components/BookSources';
 import { ConversationThread } from './src/components/ConversationThread';
 import { MindMapScreen } from './src/components/MindMapScreen';
 import { SessionExpiredBanner } from './src/components/SessionExpiredBanner';
+import { BackgroundJobBanner } from './src/components/BackgroundJobBanner';
 import { SignInSheet } from './src/components/SignInSheet';
 import { WholeBookAiSheet } from './src/components/WholeBookAiSheet';
 import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
@@ -2468,6 +2469,17 @@ function ReaderApp() {
     () => getActiveLibraryItem(libraryItems, activeBookId),
     [activeBookId, libraryItems],
   );
+  const pendingNotice = selectPendingNotice(libraryItems);
+
+  function clearPendingNoticeOfKind(bookId: string, kind: 'indexing' | 'mindmap') {
+    setLibraryItems((items) =>
+      items.map((item) =>
+        item.id === bookId && item.pendingNotice?.kind === kind
+          ? { ...item, pendingNotice: undefined }
+          : item,
+      ),
+    );
+  }
   const currentBook = activeLibraryItem.book;
   const readingLocation = activeLibraryItem.readingLocation;
   const savedInsights = activeLibraryItem.savedInsights;
@@ -3006,6 +3018,25 @@ function ReaderApp() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthLoading]);
+
+  // Opening the sheet for a book with an unseen indexing notice implicitly shows
+  // the result live — clear the notice so the banner doesn't also appear for it.
+  useEffect(() => {
+    if (!isWholeBookAiOpen) {
+      return;
+    }
+    clearPendingNoticeOfKind(activeBookId, 'indexing');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWholeBookAiOpen, activeBookId]);
+
+  // Same idea for the mind map screen.
+  useEffect(() => {
+    if (!mindMapOpen || !mindMapBookId) {
+      return;
+    }
+    clearPendingNoticeOfKind(mindMapBookId, 'mindmap');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mindMapOpen, mindMapBookId]);
 
   function chooseAction(action: SelectionAction) {
     if (action === 'copy') {
@@ -3987,6 +4018,28 @@ function ReaderApp() {
         onDismiss={dismissSessionExpiredNotice}
         onSignIn={() => setIsSignInOpen(true)}
         sessionExpired={sessionExpired && !isSignInOpen}
+      />
+
+      <BackgroundJobBanner
+        notice={pendingNotice}
+        onDismiss={() => {
+          if (pendingNotice) {
+            clearPendingNoticeOfKind(pendingNotice.bookId, pendingNotice.kind);
+          }
+        }}
+        onView={() => {
+          if (!pendingNotice) {
+            return;
+          }
+          const { bookId, bookTitle, kind } = pendingNotice;
+          clearPendingNoticeOfKind(bookId, kind);
+          openLibraryItem(bookId);
+          if (kind === 'indexing') {
+            setIsWholeBookAiOpen(true);
+          } else {
+            void openMindMap(bookId, bookTitle);
+          }
+        }}
       />
 
       {isSignInOpen ? (
