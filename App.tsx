@@ -2406,6 +2406,10 @@ function ReaderApp() {
   isWholeBookAiOpenRef.current = isWholeBookAiOpen;
   const activeBookIdRef = useRef(activeBookId);
   activeBookIdRef.current = activeBookId;
+  // Tracks library item ids with an in-flight runIndexBookFor call, so the
+  // background resume-check can't start a second concurrent upload/index run for
+  // a book the user (or an earlier resume-check tick) already has running.
+  const inFlightIndexingRef = useRef<Set<string>>(new Set());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [scrollTarget, setScrollTarget] = useState<ScrollTarget | null>(null);
   const [isStorageReady, setIsStorageReady] = useState(false);
@@ -2970,17 +2974,16 @@ function ReaderApp() {
         item.wholeBookAi.status === 'queued' ||
         item.wholeBookAi.status === 'indexing'
       ) {
-        void runIndexBookFor(item);
+        void runIndexBookFor(item, { silent: true });
       }
 
       if (item.mindMapJob?.status === 'generating' && item.wholeBookAi.cloudBookId) {
-        const isBeingWatched =
-          mindMapOpenRef.current && mindMapBookIdRef.current === item.id;
         try {
           const result = await getMindMap(apiBaseUrl, item.wholeBookAi.cloudBookId, token);
           if (result.status !== 'generating' && result.status !== 'pending') {
             const resolvedStatus: 'ready' | 'failed' = result.status === 'ready' ? 'ready' : 'failed';
             const bookId = item.id;
+            const isBeingWatched = mindMapOpenRef.current && mindMapBookIdRef.current === bookId;
             setLibraryItems((items) =>
               items.map((i) =>
                 i.id === bookId
@@ -3555,12 +3558,26 @@ function ReaderApp() {
     }
   }
 
-  async function runIndexBookFor(libraryItem: LibraryItem) {
+  async function runIndexBookFor(libraryItem: LibraryItem, options: { silent?: boolean } = {}) {
+    if (inFlightIndexingRef.current.has(libraryItem.id)) {
+      return;
+    }
+    inFlightIndexingRef.current.add(libraryItem.id);
+    try {
+      await runIndexBookForInner(libraryItem, options);
+    } finally {
+      inFlightIndexingRef.current.delete(libraryItem.id);
+    }
+  }
+
+  async function runIndexBookForInner(libraryItem: LibraryItem, options: { silent?: boolean }) {
     const token = await getAccessToken();
     if (!token) {
-      // Close the Book AI sheet first so the sign-in prompt isn't hidden behind it.
-      setIsWholeBookAiOpen(false);
-      setIsSignInOpen(true);
+      if (!options.silent) {
+        // Close the Book AI sheet first so the sign-in prompt isn't hidden behind it.
+        setIsWholeBookAiOpen(false);
+        setIsSignInOpen(true);
+      }
       return;
     }
 
@@ -3783,6 +3800,13 @@ function ReaderApp() {
             setMindMapStatus(poll.status);
             setMindMapData(poll.data ?? null);
             setMindMapError(poll.error);
+            setLibraryItems((items) =>
+              items.map((item) =>
+                item.id === bookId
+                  ? { ...item, mindMapJob: { status: poll.status === 'ready' ? 'ready' : 'failed' } }
+                  : item,
+              ),
+            );
           }
         } catch {
           // ignore poll errors
