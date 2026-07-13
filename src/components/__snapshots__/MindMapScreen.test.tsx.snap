@@ -328,6 +328,17 @@ exports[`rendering: generating state shows spinner and label 1`] = `
         >
           Generating mind map…
         </Text>
+        <Text
+          style={
+            {
+              "color": "#a8a298",
+              "fontSize": 13,
+              "textAlign": "center",
+            }
+          }
+        >
+          You can close this — it'll keep generating in the background.
+        </Text>
       </View>
     </View>
   </View>
@@ -761,6 +772,36 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
               </RNSVGGroup>
             </RNSVGSvgView>
             <View
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": true,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              hitSlop={8}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
               style={
                 [
                   {
@@ -775,11 +816,13 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                   {
                     "left": 295,
                     "minHeight": 64,
+                    "opacity": 1,
                     "top": 347,
                     "width": 168,
                   },
                 ]
               }
+              testID="mindmap-center-node"
             >
               <Text
                 numberOfLines={2}

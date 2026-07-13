@@ -681,6 +681,9 @@ export function MindMapScreen({
             <View style={styles.centeredState}>
               <ActivityIndicator size="large" color="#7c5cbf" />
               <Text style={styles.stateText}>Generating mind map…</Text>
+              <Text style={styles.stateSubText}>
+                You can close this — it'll keep generating in the background.
+              </Text>
             </View>
           )}
 

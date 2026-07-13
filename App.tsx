@@ -3007,7 +3007,15 @@ function ReaderApp() {
   }
 
   useEffect(() => {
-    if (isAuthLoading) {
+    // Also wait on isStorageReady: libraryItems starts as a single placeholder
+    // sample book and only becomes the real restored library once the separate,
+    // independently-timed restoreReaderState effect finishes. Firing on
+    // isAuthLoading alone risks running checkBackgroundJobs against that stale
+    // placeholder list on a cold launch, silently skipping every real book — and
+    // since this effect only reruns on isAuthLoading changes or an AppState
+    // 'active' transition, a missed initial check has no other chance to fire
+    // until the user backgrounds/foregrounds again.
+    if (isAuthLoading || !isStorageReady) {
       return;
     }
     void checkBackgroundJobs();
@@ -3020,7 +3028,7 @@ function ReaderApp() {
       subscription.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthLoading]);
+  }, [isAuthLoading, isStorageReady]);
 
   // Opening the sheet for a book with an unseen indexing notice implicitly shows
   // the result live — clear the notice so the banner doesn't also appear for it.
