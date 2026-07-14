@@ -2980,30 +2980,7 @@ function ReaderApp() {
       }
 
       if (item.mindMapJob?.status === 'generating' && item.wholeBookAi.cloudBookId) {
-        try {
-          const result = await getMindMap(apiBaseUrl, item.wholeBookAi.cloudBookId, token);
-          if (result.status !== 'generating' && result.status !== 'pending') {
-            const resolvedStatus: 'ready' | 'failed' = result.status === 'ready' ? 'ready' : 'failed';
-            const bookId = item.id;
-            const isBeingWatched = mindMapOpenRef.current && mindMapBookIdRef.current === bookId;
-            setLibraryItems((items) =>
-              items.map((i) =>
-                i.id === bookId
-                  ? {
-                      ...i,
-                      mindMapJob: { status: resolvedStatus },
-                      pendingNotice: isBeingWatched
-                        ? i.pendingNotice
-                        : { kind: 'mindmap', status: resolvedStatus, notifiedAt: new Date().toISOString() },
-                    }
-                  : i,
-              ),
-            );
-          }
-        } catch {
-          // Leave the job as 'generating' — it'll be checked again on the next
-          // launch/foreground tick.
-        }
+        void pollMindMapUntilDone(item.id, item.wholeBookAi.cloudBookId);
       }
     }
   }
