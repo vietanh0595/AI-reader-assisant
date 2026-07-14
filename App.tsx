@@ -2439,8 +2439,10 @@ function ReaderApp() {
   const [mindMapStatus, setMindMapStatus] = useState<MindMapStatus>('pending');
   const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
   const [mindMapError, setMindMapError] = useState<string | undefined>(undefined);
-  const mindMapPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mindMapCancelRef = useRef(false);
+  // Tracks library item ids with an in-flight pollMindMapUntilDone loop, so
+  // reopening a still-generating book's screen (or a resume-check tick) can't
+  // start a second overlapping poll loop for the same book.
+  const mindMapInFlightRef = useRef<Set<string>>(new Set());
   // Navigation state lifted so it survives close/reopen for the same book.
   const [mindMapNavTab, setMindMapNavTab] = useState<'concepts' | 'chapters'>('concepts');
   const [mindMapNavOpenChapterId, setMindMapNavOpenChapterId] = useState<string | null>(null);
@@ -3703,6 +3705,76 @@ function ReaderApp() {
     return runIndexBookFor(activeLibraryItem);
   }
 
+  const MIND_MAP_POLL_INTERVAL_MS = 3_000;
+  const MIND_MAP_POLL_MAX_ATTEMPTS = 200;
+
+  // Polls a single book's mind-map generation to completion, independent of
+  // whether its screen is open. Guarded by mindMapInFlightRef so a reopened
+  // screen (or a resume-check tick) can't start a second overlapping loop for
+  // the same book. Always persists the resolved status; only pushes the result
+  // onto the on-screen state if that exact book's screen is still the one open.
+  async function pollMindMapUntilDone(bookId: string, cloudBookId: string) {
+    if (mindMapInFlightRef.current.has(bookId)) {
+      return;
+    }
+    mindMapInFlightRef.current.add(bookId);
+    try {
+      let attempts = 0;
+      while (attempts < MIND_MAP_POLL_MAX_ATTEMPTS) {
+        await new Promise<void>((resolve) => setTimeout(resolve, MIND_MAP_POLL_INTERVAL_MS));
+        attempts++;
+
+        const token = await getAccessToken();
+        if (!token) {
+          continue;
+        }
+
+        let result;
+        try {
+          result = await getMindMap(apiBaseUrl, cloudBookId, token);
+        } catch {
+          continue;
+        }
+
+        if (result.status === 'generating' || result.status === 'pending') {
+          continue;
+        }
+
+        const resolvedStatus: 'ready' | 'failed' = result.status === 'ready' ? 'ready' : 'failed';
+        const isBeingWatched = mindMapOpenRef.current && mindMapBookIdRef.current === bookId;
+
+        setLibraryItems((items) =>
+          items.map((item) =>
+            item.id === bookId
+              ? {
+                  ...item,
+                  mindMapJob: { status: resolvedStatus },
+                  pendingNotice: isBeingWatched
+                    ? item.pendingNotice
+                    : { kind: 'mindmap', status: resolvedStatus, notifiedAt: new Date().toISOString() },
+                }
+              : item,
+          ),
+        );
+
+        if (isBeingWatched) {
+          setMindMapStatus(result.status);
+          setMindMapData(result.data ?? null);
+          setMindMapError(result.error);
+        }
+        return;
+      }
+
+      // Exceeded the cap — give up gracefully, matching indexBook.ts's own
+      // pollUntilDone philosophy, rather than polling forever.
+      setLibraryItems((items) =>
+        items.map((item) => (item.id === bookId ? { ...item, mindMapJob: { status: 'failed' } } : item)),
+      );
+    } finally {
+      mindMapInFlightRef.current.delete(bookId);
+    }
+  }
+
   async function openMindMap(bookId: string, bookTitle: string, options: { forceGenerate?: boolean } = {}) {
     const libraryItem = libraryItems.find((item) => item.id === bookId);
 
@@ -3715,15 +3787,8 @@ function ReaderApp() {
       return;
     }
 
-    // Clear any existing poll interval before starting a new one (fix: interval leak on retry)
-    if (mindMapPollRef.current) {
-      clearInterval(mindMapPollRef.current);
-      mindMapPollRef.current = null;
-    }
-    // Mark any previous openMindMap call as cancelled (fix: stale async race after close)
-    mindMapCancelRef.current = false;
-    const cancelled = () => mindMapCancelRef.current;
     const cloudBookId = resolveMindMapBookId(bookId, libraryItem.wholeBookAi);
+    const isThisScreenActive = () => mindMapOpenRef.current && mindMapBookIdRef.current === bookId;
 
     // Reset nav + selection state when opening a different book; preserve for same book.
     if (bookId !== mindMapBookId) {
@@ -3756,8 +3821,6 @@ function ReaderApp() {
     try {
       const token = await getAccessToken();
 
-      if (cancelled()) return;
-
       if (!token) {
         setMindMapOpen(false);
         setIsSignInOpen(true);
@@ -3767,72 +3830,37 @@ function ReaderApp() {
       // Check current status
       const current = await getMindMap(apiBaseUrl, cloudBookId, token);
 
-      if (cancelled()) return;
-
       if (!shouldStartMindMapGeneration(current.status, options.forceGenerate ?? false)) {
-        setMindMapStatus(current.status);
-        setMindMapData(current.data ?? null);
-        setMindMapError(current.error);
+        if (isThisScreenActive()) {
+          setMindMapStatus(current.status);
+          setMindMapData(current.data ?? null);
+          setMindMapError(current.error);
+        }
         return;
       }
 
       // Not ready — trigger generation
       await generateMindMap(apiBaseUrl, cloudBookId, token);
 
-      if (cancelled()) return;
-
-      setMindMapStatus('generating');
+      if (isThisScreenActive()) {
+        setMindMapStatus('generating');
+      }
       setLibraryItems((items) =>
         items.map((item) =>
           item.id === bookId ? { ...item, mindMapJob: { status: 'generating' } } : item,
         ),
       );
 
-      // Poll every 3 seconds
-      mindMapPollRef.current = setInterval(async () => {
-        if (cancelled()) {
-          clearInterval(mindMapPollRef.current!);
-          mindMapPollRef.current = null;
-          return;
-        }
-        try {
-          const pollToken = await getAccessToken();
-          if (!pollToken) {
-            return;
-          }
-          const poll = await getMindMap(apiBaseUrl, cloudBookId, pollToken);
-          if (cancelled()) return;
-          if (poll.status !== 'generating' && poll.status !== 'pending') {
-            clearInterval(mindMapPollRef.current!);
-            mindMapPollRef.current = null;
-            setMindMapStatus(poll.status);
-            setMindMapData(poll.data ?? null);
-            setMindMapError(poll.error);
-            setLibraryItems((items) =>
-              items.map((item) =>
-                item.id === bookId
-                  ? { ...item, mindMapJob: { status: poll.status === 'ready' ? 'ready' : 'failed' } }
-                  : item,
-              ),
-            );
-          }
-        } catch {
-          // ignore poll errors
-        }
-      }, 3000);
+      void pollMindMapUntilDone(bookId, cloudBookId);
     } catch (err) {
-      if (cancelled()) return;
-      setMindMapStatus('failed');
-      setMindMapError(err instanceof Error ? err.message : 'Failed to load mind map');
+      if (isThisScreenActive()) {
+        setMindMapStatus('failed');
+        setMindMapError(err instanceof Error ? err.message : 'Failed to load mind map');
+      }
     }
   }
 
   function closeMindMap() {
-    mindMapCancelRef.current = true; // cancel any in-flight openMindMap async body
-    if (mindMapPollRef.current) {
-      clearInterval(mindMapPollRef.current);
-      mindMapPollRef.current = null;
-    }
     // Snapshot live selection + zoom so they survive the unmount and can be
     // restored when the map reopens for the same book.
     const live = mindMapLiveRef.current;
