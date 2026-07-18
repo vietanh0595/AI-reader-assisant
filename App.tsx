@@ -4140,6 +4140,13 @@ function ReaderApp() {
             // so guard against the target item directly rather than via it.
             const targetItem = libraryItems.find((i) => i.id === mindMapBookId);
             if (targetItem && targetItem.wholeBookAi.status === 'ready') {
+              // Mind-map-driven questions are about concepts from anywhere in the
+              // book, not just what's been read so far — default the thread to
+              // whole-book scope. openLibraryItem() above already reset it to
+              // false, so this must come after. Stays on for the rest of the
+              // thread (including follow-ups typed manually) until the user
+              // toggles it off themselves.
+              setIncludeWholeBook(true);
               setAssistError(null);
               setIsAskOpen(false);
               setIsThreadCollapsed(false);
@@ -4154,6 +4161,9 @@ function ReaderApp() {
             setMindMapReturnBookId(mindMapBookId);
             closeMindMap();
             openLibraryItem(mindMapBookId);
+            // See the onAsk handler above for why this must come after
+            // openLibraryItem() and why it's sticky for the whole thread.
+            setIncludeWholeBook(true);
             setPendingQuickAsk({ bookId: mindMapBookId, question, allowGeneralKnowledge });
           }}
         />
