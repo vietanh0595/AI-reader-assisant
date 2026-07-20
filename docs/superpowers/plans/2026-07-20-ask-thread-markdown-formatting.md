@@ -503,7 +503,7 @@ Create `src/components/AnswerMarkdown.test.tsx`:
 ```tsx
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import { AnswerMarkdown } from './AnswerMarkdown';
+import { AnswerMarkdown } from './AnswerMarkdown.tsx';
 
 test('renders a plain paragraph unchanged', async () => {
   await render(<AnswerMarkdown text="Start early." />);
@@ -661,7 +661,7 @@ git commit -m "feat(ask): add AnswerMarkdown renderer component"
 - Modify: `src/components/ConversationThread.tsx`
 
 **Interfaces:**
-- Consumes: `AnswerMarkdown` (Task 3, `./AnswerMarkdown`).
+- Consumes: `AnswerMarkdown` (Task 3, `./AnswerMarkdown.tsx` — see Step 1 for why the explicit extension is required).
 
 - [ ] **Step 1: Add the import**
 
@@ -674,8 +674,20 @@ import { BookSources } from './BookSources';
 Add immediately before it:
 
 ```ts
-import { AnswerMarkdown } from './AnswerMarkdown';
+import { AnswerMarkdown } from './AnswerMarkdown.tsx';
 ```
+
+Use the explicit `.tsx` extension, not the bare `./AnswerMarkdown`. This
+directory also has `answerMarkdown.ts` (Task 2's parser, lowercase). On a
+case-insensitive filesystem (default macOS, default Windows), both Jest's and
+Metro's module resolvers try the `.ts` extension before `.tsx`, so an
+extension-less `./AnswerMarkdown` import case-insensitively matches
+`answerMarkdown.ts` instead of the intended `AnswerMarkdown.tsx` — the import
+silently succeeds but binds to the wrong module (whose only export is
+`parseAnswerMarkdown`), making `AnswerMarkdown` `undefined` and crashing at
+render time with "Element type is invalid." This was discovered and verified
+while implementing Task 3. The explicit extension forces exact-name resolution
+with no case-insensitive false match.
 
 - [ ] **Step 2: Replace the raw answer text with the renderer**
 
