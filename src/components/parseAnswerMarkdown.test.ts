@@ -1,4 +1,4 @@
-import { parseAnswerMarkdown } from './answerMarkdown';
+import { parseAnswerMarkdown } from './parseAnswerMarkdown';
 
 test('parses a single plain paragraph', () => {
   expect(parseAnswerMarkdown('Start early.')).toEqual([

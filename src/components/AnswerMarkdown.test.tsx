@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
-import { AnswerMarkdown } from './AnswerMarkdown.tsx';
+import { AnswerMarkdown } from './AnswerMarkdown';
 
 test('renders a plain paragraph unchanged', async () => {
   await render(<AnswerMarkdown text="Start early." />);

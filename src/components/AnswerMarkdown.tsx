@@ -1,6 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import { parseAnswerMarkdown, type AnswerBlock, type AnswerSpan } from './answerMarkdown';
+import { parseAnswerMarkdown, type AnswerBlock, type AnswerSpan } from './parseAnswerMarkdown';
 
 export type AnswerMarkdownProps = {
   text: string;
