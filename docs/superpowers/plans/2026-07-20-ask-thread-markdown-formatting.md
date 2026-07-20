@@ -767,6 +767,33 @@ git commit -m "feat(ask): render assistant answers with Markdown formatting"
 
 ---
 
+## Post-implementation correction: rename to eliminate the case collision
+
+While implementing Task 4, the explicit-`.tsx`-extension workaround adopted during Task 3 (to dodge
+Jest/Metro's case-insensitive module resolution) turned out to hit a second, harder problem:
+TypeScript rejects an import path ending in `.tsx` unless `allowImportingTsExtensions` is enabled in
+`tsconfig.json` (`TS5097`), which this project does not set. Separately, `tsc`'s own file enumeration on
+a case-insensitive filesystem silently drops one of the two case-colliding files
+(`answerMarkdown.ts`/`AnswerMarkdown.tsx`) from the compiled file set entirely — meaning Task 3's test
+file was never actually type-checked as itself, masking this until Task 4 hit the same import pattern in
+a file that *does* get type-checked.
+
+The root cause is the case-only naming collision itself, not the extension workaround. The fix is to
+rename Task 2's file so no two files in `src/components/` differ only by case:
+
+- `src/components/answerMarkdown.ts` → `src/components/parseAnswerMarkdown.ts`
+- `src/components/answerMarkdown.test.ts` → `src/components/parseAnswerMarkdown.test.ts`
+- `src/components/AnswerMarkdown.tsx`'s import updates to
+  `from './parseAnswerMarkdown'` (still extension-less — safe now, since there's no case-colliding
+  file to ambiguously match).
+- `src/components/AnswerMarkdown.test.tsx`'s import reverts to extension-less:
+  `from './AnswerMarkdown'` (also now safe).
+- Task 4's `ConversationThread.tsx` import likewise uses the plain, extension-less
+  `from './AnswerMarkdown'`.
+
+No behavior, types, or exported names changed — `parseAnswerMarkdown`, `AnswerSpan`, and `AnswerBlock`
+keep their names; only the two Task-2 file paths change.
+
 ## Manual verification (recap)
 
 Covered in Task 4, Step 7 above — this is the final task in the plan.
