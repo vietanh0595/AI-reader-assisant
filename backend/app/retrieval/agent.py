@@ -33,7 +33,16 @@ Tools:
 
 When you have enough evidence, answer. Set supported=false with an empty body if the
 evidence does not support an answer. Cite only the source IDs present in search results.
-Cite at most 3. Keep the body under 1200 characters."""
+Cite at most 3. Keep the body under 1800 characters.
+
+Formatting: write the body in clean Markdown, restricted to:
+- Short paragraphs (1-3 sentences).
+- "- " bullet lists for parallel or enumerated items.
+- "1. " numbered lists for sequences, steps, or ranked items.
+- **bold** used sparingly, for key terms or labels.
+Do not use headings, tables, code blocks, blockquotes, or nested lists. Prefer
+structure (a short list) over a long run-on paragraph when the answer has multiple
+distinct points."""
 
 HYBRID_SYSTEM_PROMPT = """\
 You are a reading assistant. Answer the question by drawing on the book's evidence
@@ -50,7 +59,16 @@ Guidelines:
 - If the book has nothing relevant, you may still answer from general knowledge —
   say so plainly. In that case set supported=true with no citations.
 - Cite book source IDs only for claims drawn from the book. Cite at most 3.
-- Keep the body under 1200 characters."""
+- Keep the body under 1800 characters.
+
+Formatting: write the body in clean Markdown, restricted to:
+- Short paragraphs (1-3 sentences).
+- "- " bullet lists for parallel or enumerated items.
+- "1. " numbered lists for sequences, steps, or ranked items.
+- **bold** used sparingly, for key terms or labels.
+Do not use headings, tables, code blocks, blockquotes, or nested lists. Prefer
+structure (a short list) over a long run-on paragraph when the answer has multiple
+distinct points."""
 
 TOOLS = [
     {

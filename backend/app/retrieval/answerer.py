@@ -20,7 +20,7 @@ _INSUFFICIENT_EVIDENCE_BODY = (
 class ModelBookAnswer(BaseModel):
     supported: bool
     eyebrow: str = Field(max_length=40)
-    body: str = Field(max_length=1200)
+    body: str = Field(max_length=1800)
     citation_ids: list[str] = Field(max_length=3)
 
 
