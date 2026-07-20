@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ConversationTurn } from '../library/conversation';
+import { AnswerMarkdown } from './AnswerMarkdown';
 import { BookSources } from './BookSources';
 
 type ConversationThreadProps = {
@@ -324,7 +325,7 @@ export function ConversationThread({
                     pointerEvents="none"
                   />
                 )}
-                <Text style={styles.answerText}>{turn.text}</Text>
+                <AnswerMarkdown text={turn.text} />
                 {turn.sources && turn.sources.length > 0 ? (
                   <View style={styles.sources}>
                     <BookSources sources={turn.sources} onNavigate={(id, excerpt) => { Keyboard.dismiss(); onNavigateSource(id, excerpt); }} />
@@ -603,11 +604,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 13,
-  },
-  answerText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#171715',
   },
   sources: {
     marginTop: 12,
