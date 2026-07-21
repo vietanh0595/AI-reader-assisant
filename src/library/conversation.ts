@@ -13,12 +13,15 @@ export type ConversationTurn = {
 
 export const LIBRARY_SCHEMA_VERSION = 4;
 
-export function migrateLibraryItem<T extends { schemaVersion?: number; conversation?: ConversationTurn[] }>(
+export function migrateLibraryItem<
+  T extends { schemaVersion?: number; conversation?: ConversationTurn[]; archivedConversations?: ConversationTurn[][] },
+>(
   item: T,
-): T & { schemaVersion: number; conversation: ConversationTurn[] } {
+): T & { schemaVersion: number; conversation: ConversationTurn[]; archivedConversations: ConversationTurn[][] } {
   return {
     ...item,
     schemaVersion: LIBRARY_SCHEMA_VERSION,
     conversation: item.conversation ?? [],
+    archivedConversations: item.archivedConversations ?? [],
   };
 }

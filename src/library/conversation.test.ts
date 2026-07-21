@@ -11,3 +11,18 @@ test('leaves an existing conversation untouched', () => {
   const v4 = { id: 'b1', schemaVersion: 4, conversation: [{ id: 't1', role: 'user', text: 'hi', createdAt: 'now' }] } as any;
   expect(migrateLibraryItem(v4).conversation).toHaveLength(1);
 });
+
+test('defaults archivedConversations to an empty array when missing', () => {
+  const v4 = { id: 'b1', schemaVersion: 4, conversation: [] } as any;
+  expect(migrateLibraryItem(v4).archivedConversations).toEqual([]);
+});
+
+test('leaves an existing archivedConversations array untouched', () => {
+  const v4 = {
+    id: 'b1',
+    schemaVersion: 4,
+    conversation: [],
+    archivedConversations: [[{ id: 't1', role: 'user', text: 'hi', createdAt: 'now' }]],
+  } as any;
+  expect(migrateLibraryItem(v4).archivedConversations).toHaveLength(1);
+});

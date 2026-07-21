@@ -55,6 +55,7 @@ import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } fro
 import { appendTurns } from './src/library/appendTurn';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   KeyboardAvoidingView,
   NativeModules,
@@ -219,6 +220,7 @@ type SavedInsight = {
 type SavedNoteFilter = 'all' | InsightAction;
 
 type LibraryItem = {
+  archivedConversations?: ConversationTurn[][];
   book: ReaderBook;
   conversation: ConversationTurn[];
   id: string;
@@ -3451,7 +3453,27 @@ function ReaderApp() {
   }
 
   function clearConversation() {
-    updateActiveLibraryItem((item) => ({ ...item, conversation: [] }));
+    if (activeLibraryItem.conversation.length === 0) {
+      return;
+    }
+    Alert.alert(
+      'Clear conversation?',
+      "This book's current questions and answers will be cleared. You'll start fresh.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            updateActiveLibraryItem((item) => ({
+              ...item,
+              archivedConversations: [...(item.archivedConversations ?? []), item.conversation],
+              conversation: [],
+            }));
+          },
+        },
+      ],
+    );
   }
 
   async function runBookAsk(
