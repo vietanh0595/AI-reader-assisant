@@ -12,11 +12,13 @@ logging.config.dictConfig({
     "root": {"level": "INFO", "handlers": ["console"]},
 })
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth.dependencies import get_current_user
 from .auth.jwt import JwtValidator
 from .config import Settings, get_settings
+from .db.models import User
 from .db.session import create_session_factory
 from .openai_assistant import AssistantConfigurationError, AssistantServiceError, OpenAIAssistant
 from .routers.auth import router as auth_router
@@ -82,7 +84,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     @app.post("/ocr/extract", response_model=OcrResponse)
-    def extract_ocr(request: OcrRequest, response: Response) -> OcrResponse:
+    def extract_ocr(
+        request: OcrRequest,
+        response: Response,
+        user: User = Depends(get_current_user),
+    ) -> OcrResponse:
         started_at = perf_counter()
 
         try:

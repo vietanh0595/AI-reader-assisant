@@ -1748,7 +1748,7 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
   };
 }
 
-async function requestOcr(payload: OcrRequestPayload): Promise<OcrExtractResponse> {
+async function requestOcr(payload: OcrRequestPayload, token: string): Promise<OcrExtractResponse> {
   const ocrUrl = `${apiBaseUrl}/ocr/extract`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ocrRequestTimeoutMs);
@@ -1759,6 +1759,7 @@ async function requestOcr(payload: OcrRequestPayload): Promise<OcrExtractRespons
     response = await fetch(ocrUrl, {
       body: JSON.stringify(payload),
       headers: {
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       method: 'POST',
@@ -2479,6 +2480,16 @@ function ReaderApp() {
   );
   const pendingNotice = selectPendingNotice(libraryItems);
 
+  // wholeBookAi.status is a per-book flag persisted locally — it stays 'ready' after
+  // the indexing that set it, even across a later sign-out. Signing out doesn't reset
+  // it (correctly — re-signing in with the same account shouldn't require re-indexing),
+  // so any check that opens Whole-Book-AI-gated UI must also confirm there's still a
+  // live session, or a signed-out user sees the Ask thread/mind map open as if nothing
+  // changed.
+  function canUseWholeBookAi(item: LibraryItem) {
+    return item.wholeBookAi.status === 'ready' && isAuthenticated;
+  }
+
   function clearPendingNoticeOfKind(bookId: string, kind: 'indexing' | 'mindmap') {
     setLibraryItems((items) =>
       items.map((item) =>
@@ -2923,9 +2934,10 @@ function ReaderApp() {
     }
     const { question, allowGeneralKnowledge } = pendingQuickAsk;
     setPendingQuickAsk(null);
-    if (activeLibraryItem.wholeBookAi.status !== 'ready') {
-      // Shouldn't happen — the mind map can't render without Whole-Book AI — but
-      // fail safe by prompting to enable it rather than silently dropping the ask.
+    if (!canUseWholeBookAi(activeLibraryItem)) {
+      // Shouldn't happen while still signed in — the mind map can't render without
+      // Whole-Book AI — but fail safe by prompting to enable/sign in rather than
+      // silently dropping the ask.
       setIsWholeBookAiOpen(true);
       return;
     }
@@ -3044,7 +3056,7 @@ function ReaderApp() {
       setAssistError(null);
       setIsAssistLoading(false);
       setIsSavedNotesOpen(false);
-      if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+      if (!canUseWholeBookAi(activeLibraryItem)) {
         setIsWholeBookAiOpen(true);
         return;
       }
@@ -3181,7 +3193,12 @@ function ReaderApp() {
           width: preparedImage.width,
         });
         setScanStage('uploading');
-        ocrResult = await requestOcr({ imageDataUrl: preparedImage.dataUrl });
+        const ocrToken = await getAccessToken();
+        if (!ocrToken) {
+          setIsSignInOpen(true);
+          throw new Error('Your sign-in has expired. Please sign in again to scan a page.');
+        }
+        ocrResult = await requestOcr({ imageDataUrl: preparedImage.dataUrl }, ocrToken);
       }
 
       const scannedBook = toScanReaderBook(ocrResult, asset);
@@ -3442,7 +3459,7 @@ function ReaderApp() {
   }
 
   function openConversationThread() {
-    if (activeLibraryItem.wholeBookAi.status !== 'ready') {
+    if (!canUseWholeBookAi(activeLibraryItem)) {
       setIsWholeBookAiOpen(true);
       return;
     }
@@ -4161,7 +4178,7 @@ function ReaderApp() {
             // activeLibraryItem won't reflect the new book until the next render,
             // so guard against the target item directly rather than via it.
             const targetItem = libraryItems.find((i) => i.id === mindMapBookId);
-            if (targetItem && targetItem.wholeBookAi.status === 'ready') {
+            if (targetItem && canUseWholeBookAi(targetItem)) {
               // Mind-map-driven questions are about concepts from anywhere in the
               // book, not just what's been read so far — default the thread to
               // whole-book scope. openLibraryItem() above already reset it to
