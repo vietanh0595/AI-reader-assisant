@@ -204,9 +204,10 @@ from fastapi.testclient import TestClient
 
 
 _VALID_ASSIST_PAYLOAD = {
-    "action": "explain",
+    "action": "summarize",
     "author": "Test Author",
     "bookTitle": "Test Book",
+    "paragraphText": "Some paragraph text to summarize.",
 }
 
 
@@ -226,6 +227,12 @@ route — `/ai/assist` never touches the database, so this test needs no live Po
 one of the first 20 requests is expected to reach `assistant.generate()` and fail with a 500 (missing
 OpenAI API key, via `AssistantConfigurationError`) — that's fine and expected; this test only asserts
 that none of the first 20 are specifically a 429, and that the 21st specifically is.
+
+The payload uses `action: "summarize"` with `paragraphText` specifically: `AssistRequest`'s
+`model_validator` (in `backend/app/schemas.py`) requires `selectedText`/`selectionKind` for every action
+*except* `summarize`, and auto-populates `context_blocks` from `paragraphText` when neither is supplied
+— this is the smallest payload that passes schema validation (a 422) so the request actually reaches the
+rate-limit dependency and, beyond it, `assistant.generate()`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
