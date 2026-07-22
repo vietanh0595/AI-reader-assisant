@@ -21,6 +21,7 @@ from .config import Settings, get_settings
 from .db.models import User
 from .db.session import create_session_factory
 from .openai_assistant import AssistantConfigurationError, AssistantServiceError, OpenAIAssistant
+from .rate_limit import check_ai_assist_rate_limit
 from .routers.auth import router as auth_router
 from .routers.book_ask import router as book_ask_router
 from .routers.indexing import router as indexing_router
@@ -75,7 +76,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"model": app_settings.openai_model, "status": "ok"}
 
     @app.post("/ai/assist", response_model=AssistResponse)
-    def assist(request: AssistRequest) -> AssistResponse:
+    def assist(
+        request: AssistRequest,
+        _rate_limit: None = Depends(check_ai_assist_rate_limit),
+    ) -> AssistResponse:
         try:
             return assistant.generate(request)
         except AssistantConfigurationError as exc:
