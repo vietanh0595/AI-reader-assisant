@@ -2611,6 +2611,18 @@ function ReaderApp() {
 
     const cloudBookId = itemToDelete.wholeBookAi?.cloudBookId;
     if (cloudBookId) {
+      // Removing the cloud index requires a valid session. Acquire the token
+      // before the optimistic 'deleting' flicker: if the user is signed out,
+      // prompt sign-in instead of silently reverting with no explanation — they
+      // can retry the delete after signing back in. (A book can only have a
+      // cloudBookId if it was indexed while signed in, so the sign-in sheet is
+      // always the right response to a missing token here.)
+      const token = await getAccessToken();
+      if (!token) {
+        setIsSignInOpen(true);
+        return;
+      }
+
       setLibraryItems((items) =>
         items.map((item) =>
           item.id === bookId
@@ -2619,22 +2631,20 @@ function ReaderApp() {
         ),
       );
 
-      const token = await getAccessToken();
       let ok = false;
-      if (token) {
-        try {
-          const resp = await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          ok = resp.ok || resp.status === 404;
-        } catch {
-          ok = false;
-        }
+      try {
+        const resp = await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        ok = resp.ok || resp.status === 404;
+      } catch {
+        ok = false;
       }
 
       if (!ok) {
-        // Revert to previous state so the user can retry (covers auth expiry too).
+        // Revert to previous state so the user can retry (covers a mid-request
+        // network failure or the token lapsing between request and response).
         setLibraryItems((items) =>
           items.map((item) =>
             item.id === bookId
