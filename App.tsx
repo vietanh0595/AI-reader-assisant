@@ -3468,6 +3468,17 @@ function ReaderApp() {
     setScrollTarget({ nonce: Date.now(), paragraphId, excerpt });
   }
 
+  function confirmSignOut() {
+    Alert.alert(
+      'Sign out?',
+      "You'll need to sign in again to use Whole-Book AI (Ask the book, mind maps). Your library and notes stay on this device.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => { void signOut(); } },
+      ],
+    );
+  }
+
   function openConversationThread() {
     if (!canUseWholeBookAi(activeLibraryItem)) {
       setIsWholeBookAiOpen(true);
@@ -3916,7 +3927,7 @@ function ReaderApp() {
               onOpenMindMap={(bookId, bookTitle) => { void openMindMap(bookId, bookTitle); }}
               onScanDocument={scanDocumentPage}
               onSignIn={() => setIsSignInOpen(true)}
-              onSignOut={signOut}
+              onSignOut={confirmSignOut}
               scanStageLabel={scanStageLabel}
             />
           ) : (
@@ -4282,6 +4293,7 @@ function LibraryScreen({
               style={styles.libraryAccountButton}
             >
               <LogOut color={colors.ink} size={18} strokeWidth={2} />
+              <Text style={styles.libraryScanText}>Sign out</Text>
             </Pressable>
           ) : (
             <Pressable
@@ -4291,6 +4303,7 @@ function LibraryScreen({
               style={styles.libraryAccountButton}
             >
               <LogIn color={colors.ink} size={18} strokeWidth={2} />
+              <Text style={styles.libraryScanText}>Sign in</Text>
             </Pressable>
           )}
           <Pressable
@@ -5737,6 +5750,8 @@ const styles = StyleSheet.create({
     borderColor: '#d0cbc1',
     borderRadius: 8,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: 7,
     justifyContent: 'center',
     minHeight: 38,
     paddingHorizontal: 11,
