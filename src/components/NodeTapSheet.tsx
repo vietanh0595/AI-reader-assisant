@@ -269,18 +269,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   quickAskChip: {
-    backgroundColor: "#efe9f7",
+    backgroundColor: "#e2ebde",
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
   quickAskChipText: {
-    color: "#4a3a73",
+    color: "#244f38",
     fontSize: 13,
     fontWeight: "600",
   },
   askButton: {
-    backgroundColor: "#7c5cbf",
+    backgroundColor: "#244f38",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",

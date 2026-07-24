@@ -169,7 +169,7 @@ exports[`rendering: failed state shows title, error and retry button 1`] = `
           onStartShouldSetResponder={[Function]}
           style={
             {
-              "backgroundColor": "#7c5cbf",
+              "backgroundColor": "#244f38",
               "borderRadius": 20,
               "marginTop": 4,
               "opacity": 1,
@@ -313,7 +313,7 @@ exports[`rendering: generating state shows spinner and label 1`] = `
         }
       >
         <ActivityIndicator
-          color="#7c5cbf"
+          color="#244f38"
           size="large"
         />
         <Text
@@ -806,7 +806,7 @@ exports[`rendering: ready state renders SVG with node labels 1`] = `
                 [
                   {
                     "alignItems": "center",
-                    "backgroundColor": "#7c5cbf",
+                    "backgroundColor": "#244f38",
                     "borderRadius": 14,
                     "justifyContent": "center",
                     "paddingHorizontal": 10,

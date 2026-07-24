@@ -35,7 +35,7 @@ const NODE_TEXT_COLORS: Record<MindMapNodeType, string> = {
   argument: "#7a3f10",
   character: "#6e1a26",
 };
-const CENTER_COLOR = "#7c5cbf";
+const CENTER_COLOR = "#244f38";
 
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3.5;
@@ -679,7 +679,7 @@ export function MindMapScreen({
         <View style={styles.content}>
           {status === "generating" && (
             <View style={styles.centeredState}>
-              <ActivityIndicator size="large" color="#7c5cbf" />
+              <ActivityIndicator size="large" color="#244f38" />
               <Text style={styles.stateText}>Generating mind map…</Text>
               <Text style={styles.stateSubText}>
                 You can close this — it'll keep generating in the background.
@@ -881,11 +881,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#efece6",
   },
-  chipActive: { backgroundColor: "#7c5cbf" },
+  chipActive: { backgroundColor: "#244f38" },
   chipText: { fontSize: 13, fontWeight: "600", color: "#6d6860" },
   chipTextActive: { color: "#fff" },
   crumbButton: { flex: 1, paddingVertical: 4 },
-  crumbText: { fontSize: 14, fontWeight: "600", color: "#4a3a73" },
+  crumbText: { fontSize: 14, fontWeight: "600", color: "#244f38" },
   content: { flex: 1 },
   centeredState: {
     flex: 1,
@@ -902,7 +902,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: "#7c5cbf",
+    backgroundColor: "#244f38",
     borderRadius: 20,
   },
   retryText: { color: "#fff", fontSize: 14, fontWeight: "600" },

@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   eyebrow: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#7c5cbf",
+    color: "#244f38",
     letterSpacing: 0.6,
     marginBottom: 4,
   },
@@ -193,13 +193,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   quickAskChip: {
-    backgroundColor: "#efe9f7",
+    backgroundColor: "#e2ebde",
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
   quickAskChipText: {
-    color: "#4a3a73",
+    color: "#244f38",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   primaryButton: {
-    backgroundColor: "#7c5cbf",
+    backgroundColor: "#244f38",
   },
   primaryButtonText: {
     color: "#fff",
@@ -222,10 +222,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   secondaryButton: {
-    backgroundColor: "#efe9f7",
+    backgroundColor: "#e2ebde",
   },
   secondaryButtonText: {
-    color: "#4a3a73",
+    color: "#244f38",
     fontSize: 15,
     fontWeight: "600",
   },
