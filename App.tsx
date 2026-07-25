@@ -57,6 +57,11 @@ import { selectPendingNotice, type PersistedPendingNotice } from './src/rag/back
 import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
 import { appendTurns } from './src/library/appendTurn';
 import {
+  formatNoteAsMarkdown,
+  formatNoteAsText,
+  type ExportableNote,
+} from './src/library/savedNoteExport';
+import {
   ActivityIndicator,
   Alert,
   AppState,
@@ -1360,42 +1365,28 @@ function formatBookSourceMeta(book: ReaderBook) {
   return blockCount > 0 ? `${sourceLabel} - ${blockCount} blocks` : sourceLabel;
 }
 
+function toExportableNote(note: SavedInsight): ExportableNote {
+  return {
+    actionLabel: getInsightActionLabel(note.action),
+    body: normalizeSelectionText(note.body),
+    createdAt: note.createdAt,
+    question: note.action === 'ask' ? normalizeSelectionText(note.eyebrow) : '',
+    selectedText: normalizeSelectionText(note.selectedText),
+    sourceLabel: formatSourceRef(note.sourceRef),
+    userNote: normalizeSelectionText(note.userNote ?? '') || undefined,
+  };
+}
+
 function formatSavedInsightsForExport(readerBook: ReaderBook, savedInsights: SavedInsight[]) {
   const sortedNotes = [...savedInsights].sort((firstNote, secondNote) =>
     firstNote.createdAt.localeCompare(secondNote.createdAt),
   );
   const header = `${readerBook.title}\n${readerBook.author}\nSaved notes`;
-  const body = sortedNotes.map(formatSavedInsightForExport).join('\n\n');
+  const body = sortedNotes
+    .map((note, index) => formatNoteAsText(toExportableNote(note), index))
+    .join('\n\n');
 
   return body ? `${header}\n\n${body}` : header;
-}
-
-function formatSavedInsightForExport(note: SavedInsight, index: number) {
-  const lines = [`${index + 1}. ${getInsightActionLabel(note.action)} - ${formatSavedNoteDate(note.createdAt)}`];
-  const sourceLabel = formatSourceRef(note.sourceRef);
-  const userNote = normalizeSelectionText(note.userNote ?? '');
-
-  if (sourceLabel) {
-    lines.push(`Source: ${sourceLabel}`);
-  }
-
-  if (note.action === 'ask' && note.eyebrow) {
-    lines.push(`Q: ${normalizeSelectionText(note.eyebrow)}`);
-  }
-
-  if (note.selectedText) {
-    lines.push(`Selected: ${normalizeSelectionText(note.selectedText)}`);
-  }
-
-  if (note.body) {
-    lines.push(`AI: ${normalizeSelectionText(note.body)}`);
-  }
-
-  if (userNote) {
-    lines.push(`Note: ${userNote}`);
-  }
-
-  return lines.join('\n');
 }
 
 function formatSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsights: SavedInsight[]) {
@@ -1403,38 +1394,11 @@ function formatSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsights: Sa
     firstNote.createdAt.localeCompare(secondNote.createdAt),
   );
   const header = `# ${readerBook.title}\n\n_${readerBook.author}_`;
-  const body = sortedNotes.map(formatSavedInsightAsMarkdown).join('\n\n---\n\n');
+  const body = sortedNotes
+    .map((note, index) => formatNoteAsMarkdown(toExportableNote(note), index))
+    .join('\n\n---\n\n');
 
   return body ? `${header}\n\n---\n\n${body}\n` : `${header}\n`;
-}
-
-function formatSavedInsightAsMarkdown(note: SavedInsight, index: number) {
-  const sourceLabel = formatSourceRef(note.sourceRef);
-  const userNote = normalizeSelectionText(note.userNote ?? '');
-  const lines = [`### ${index + 1}. ${getInsightActionLabel(note.action)} — ${formatSavedNoteDate(note.createdAt)}`];
-
-  if (sourceLabel) {
-    lines.push(`*${sourceLabel}*`);
-  }
-
-  if (note.action === 'ask' && note.eyebrow) {
-    lines.push(`**Q:** ${normalizeSelectionText(note.eyebrow)}`);
-  }
-
-  if (note.selectedText) {
-    const quotedSelection = normalizeSelectionText(note.selectedText).replace(/\n/g, '\n> ');
-    lines.push(`> ${quotedSelection}`);
-  }
-
-  if (note.body) {
-    lines.push(`**AI:** ${normalizeSelectionText(note.body)}`);
-  }
-
-  if (userNote) {
-    lines.push(`**Note:** ${userNote}`);
-  }
-
-  return lines.join('\n\n');
 }
 
 function slugifyForFileName(value: string) {
@@ -1461,20 +1425,6 @@ async function exportSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsigh
     mimeType: 'text/markdown',
     dialogTitle: 'Export saved notes',
     UTI: 'net.daringfireball.markdown',
-  });
-}
-
-function formatSavedNoteDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
   });
 }
 
