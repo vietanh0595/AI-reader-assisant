@@ -1385,8 +1385,14 @@ function toExportableNote(note: SavedInsight): ExportableNote {
   return {
     actionLabel: getInsightActionLabel(note.action),
     body: normalizeSelectionText(note.body),
+    citations: note.citations?.map((citation) => ({
+      chapterTitle: citation.chapterTitle,
+      excerpt: normalizeSelectionText(citation.excerpt),
+      pageIndex: citation.pageIndex,
+      pageLabel: citation.pageLabel,
+    })),
     createdAt: note.createdAt,
-    question: note.action === 'ask' ? normalizeSelectionText(note.eyebrow) : '',
+    question: normalizeSelectionText(note.question ?? ''),
     selectedText: normalizeSelectionText(note.selectedText),
     sourceLabel: formatSourceRef(note.sourceRef),
     userNote: normalizeSelectionText(note.userNote ?? '') || undefined,

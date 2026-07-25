@@ -1,9 +1,17 @@
 // A saved note reduced to display-ready strings. Taking labels as inputs keeps this
 // module free of App.tsx's local DocumentSourceRef/InsightAction types and its
 // formatSourceRef helper, so export formatting is testable in isolation.
+export type ExportableCitation = {
+  chapterTitle?: string;
+  excerpt: string;
+  pageIndex?: number;
+  pageLabel?: string;
+};
+
 export type ExportableNote = {
   actionLabel: string;
   body: string;
+  citations?: ExportableCitation[];
   createdAt: string;
   question: string;
   selectedText: string;
@@ -37,6 +45,10 @@ export function formatNoteAsText(note: ExportableNote, index: number): string {
     lines.push(`Note: ${note.userNote}`);
   }
 
+  for (const citation of note.citations ?? []) {
+    lines.push(`Cited: ${formatCitationLabel(citation)}`);
+  }
+
   return lines.join('\n');
 }
 
@@ -65,7 +77,23 @@ export function formatNoteAsMarkdown(note: ExportableNote, index: number): strin
     lines.push(`**Note:** ${note.userNote}`);
   }
 
+  const citations = note.citations ?? [];
+
+  if (citations.length > 0) {
+    lines.push(
+      ['**Cited:**', ...citations.map((citation) => `- ${formatCitationLabel(citation)}`)].join('\n'),
+    );
+  }
+
   return lines.join('\n\n');
+}
+
+export function formatCitationLabel(citation: ExportableCitation): string {
+  const page =
+    citation.pageLabel ?? (citation.pageIndex !== undefined ? `Page ${citation.pageIndex + 1}` : '');
+  const parts = [citation.chapterTitle, page].filter((part) => part);
+
+  return parts.length > 0 ? parts.join(' · ') : citation.excerpt.slice(0, 80);
 }
 
 export function formatNoteDate(value: string): string {

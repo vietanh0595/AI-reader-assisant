@@ -1,4 +1,10 @@
-import { formatNoteAsMarkdown, formatNoteAsText, formatNoteDate, type ExportableNote } from './savedNoteExport';
+import {
+  formatCitationLabel,
+  formatNoteAsMarkdown,
+  formatNoteAsText,
+  formatNoteDate,
+  type ExportableNote,
+} from './savedNoteExport';
 
 const note = (over: Partial<ExportableNote> = {}): ExportableNote => ({
   actionLabel: 'Ask',
@@ -85,5 +91,49 @@ describe('formatNoteAsMarkdown', () => {
   test('emits no blockquote for a whitespace-only selection', () => {
     const markdown = formatNoteAsMarkdown(note({ selectedText: '   ' }), 0);
     expect(markdown).not.toContain('>');
+  });
+});
+
+describe('formatCitationLabel', () => {
+  test('joins chapter and page label', () => {
+    expect(formatCitationLabel({ chapterTitle: 'Chapter 7', excerpt: 'x', pageLabel: '175' })).toBe(
+      'Chapter 7 · 175',
+    );
+  });
+
+  test('derives a page number from pageIndex when there is no label', () => {
+    expect(formatCitationLabel({ chapterTitle: 'Chapter 7', excerpt: 'x', pageIndex: 174 })).toBe(
+      'Chapter 7 · Page 175',
+    );
+  });
+
+  test('falls back to a trimmed excerpt when there is no chapter or page', () => {
+    expect(formatCitationLabel({ excerpt: 'Only for College' })).toBe('Only for College');
+  });
+});
+
+describe('citations in exports', () => {
+  const cited = note({
+    citations: [
+      { chapterTitle: 'Chapter 7', excerpt: 'Only for College', pageLabel: '175' },
+      { chapterTitle: 'Chapter 7', excerpt: 'All about 529 Plans', pageLabel: '174' },
+    ],
+  });
+
+  test('text export lists each citation', () => {
+    const output = formatNoteAsText(cited, 0);
+    expect(output).toContain('Cited: Chapter 7 · 175');
+    expect(output).toContain('Cited: Chapter 7 · 174');
+  });
+
+  test('markdown export lists citations under a bold label', () => {
+    const output = formatNoteAsMarkdown(cited, 0);
+    expect(output).toContain('**Cited:**');
+    expect(output).toContain('- Chapter 7 · 175');
+  });
+
+  test('neither export emits a citation section when there are none', () => {
+    expect(formatNoteAsText(note(), 0)).not.toContain('Cited');
+    expect(formatNoteAsMarkdown(note(), 0)).not.toContain('Cited');
   });
 });
