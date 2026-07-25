@@ -21,6 +21,7 @@ const baseProps = {
   includeWholeBook: true, selectedText: undefined as string | undefined, isLoading: false,
   onSubmit: jest.fn(), onToggleWholeBook: jest.fn(), onClear: jest.fn(),
   onNavigateSource: jest.fn(), onClearSelection: jest.fn(), onClose: jest.fn(),
+  onSaveTurn: jest.fn(), savedTurnIds: new Set<string>(),
 };
 
 test('renders user and assistant turns with citation chips', async () => {

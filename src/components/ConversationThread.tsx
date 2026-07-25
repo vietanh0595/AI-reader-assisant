@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { Copy, MessageCircle, Pencil } from 'lucide-react-native';
+import { Bookmark, Check, Copy, MessageCircle, Pencil } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -31,6 +31,8 @@ type ConversationThreadProps = {
   onNavigateSource: (paragraphId: string, excerpt?: string) => void;
   onClearSelection: () => void;
   onClose: () => void;
+  onSaveTurn: (turn: ConversationTurn) => void;
+  savedTurnIds: Set<string>;
 };
 
 export function ConversationThread({
@@ -46,6 +48,8 @@ export function ConversationThread({
   onNavigateSource,
   onClearSelection,
   onClose,
+  onSaveTurn,
+  savedTurnIds,
 }: ConversationThreadProps) {
   const [draft, setDraft] = useState('');
   const [quotedText, setQuotedText] = useState<string | undefined>(selectedText);
@@ -172,6 +176,12 @@ export function ConversationThread({
   function handleMenuCopy() {
     if (!menuTurn) return;
     void Clipboard.setStringAsync(menuTurn.text);
+    dismissMenu();
+  }
+
+  function handleMenuSave() {
+    if (!menuTurn || savedTurnIds.has(menuTurn.id)) return;
+    onSaveTurn(menuTurn);
     dismissMenu();
   }
 
@@ -424,6 +434,17 @@ export function ConversationThread({
             <Pressable style={styles.menuItem} onPress={handleMenuAsk}>
               <MessageCircle size={22} color="#244f38" strokeWidth={1.8} />
               <Text style={styles.menuItemLabel}>Ask about this</Text>
+            </Pressable>
+            <View style={styles.menuDivider} />
+            <Pressable style={styles.menuItem} onPress={handleMenuSave}>
+              {menuTurn && savedTurnIds.has(menuTurn.id) ? (
+                <Check size={22} color="#244f38" strokeWidth={1.8} />
+              ) : (
+                <Bookmark size={22} color="#5c5750" strokeWidth={1.8} />
+              )}
+              <Text style={styles.menuItemLabel}>
+                {menuTurn && savedTurnIds.has(menuTurn.id) ? 'Saved' : 'Save'}
+              </Text>
             </Pressable>
             <View style={styles.menuDivider} />
             <Pressable style={styles.menuItem} onPress={handleMenuCopy}>

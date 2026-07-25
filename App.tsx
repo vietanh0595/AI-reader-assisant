@@ -1371,15 +1371,20 @@ function formatSavedInsightsForExport(readerBook: ReaderBook, savedInsights: Sav
 }
 
 function formatSavedInsightForExport(note: SavedInsight, index: number) {
-  const lines = [
-    `${index + 1}. ${getInsightActionLabel(note.action)} - ${formatSavedNoteDate(note.createdAt)}`,
-    `Selected: ${normalizeSelectionText(note.selectedText)}`,
-  ];
+  const lines = [`${index + 1}. ${getInsightActionLabel(note.action)} - ${formatSavedNoteDate(note.createdAt)}`];
   const sourceLabel = formatSourceRef(note.sourceRef);
   const userNote = normalizeSelectionText(note.userNote ?? '');
 
   if (sourceLabel) {
-    lines.splice(1, 0, `Source: ${sourceLabel}`);
+    lines.push(`Source: ${sourceLabel}`);
+  }
+
+  if (note.action === 'ask' && note.eyebrow) {
+    lines.push(`Q: ${normalizeSelectionText(note.eyebrow)}`);
+  }
+
+  if (note.selectedText) {
+    lines.push(`Selected: ${normalizeSelectionText(note.selectedText)}`);
   }
 
   if (note.body) {
@@ -1406,14 +1411,20 @@ function formatSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsights: Sa
 function formatSavedInsightAsMarkdown(note: SavedInsight, index: number) {
   const sourceLabel = formatSourceRef(note.sourceRef);
   const userNote = normalizeSelectionText(note.userNote ?? '');
-  const quotedSelection = normalizeSelectionText(note.selectedText).replace(/\n/g, '\n> ');
   const lines = [`### ${index + 1}. ${getInsightActionLabel(note.action)} — ${formatSavedNoteDate(note.createdAt)}`];
 
   if (sourceLabel) {
     lines.push(`*${sourceLabel}*`);
   }
 
-  lines.push(`> ${quotedSelection}`);
+  if (note.action === 'ask' && note.eyebrow) {
+    lines.push(`**Q:** ${normalizeSelectionText(note.eyebrow)}`);
+  }
+
+  if (note.selectedText) {
+    const quotedSelection = normalizeSelectionText(note.selectedText).replace(/\n/g, '\n> ');
+    lines.push(`> ${quotedSelection}`);
+  }
 
   if (note.body) {
     lines.push(`**AI:** ${normalizeSelectionText(note.body)}`);
@@ -1483,6 +1494,19 @@ function isHighlightMatch(note: SavedInsight, selection: ReaderSelection) {
     note.paragraphId === selection.paragraphId &&
     normalizeSelectionText(note.selectedText) === normalizeSelectionText(selection.text)
   );
+}
+
+const chatInsightIdPrefix = 'chat:';
+
+function createChatInsightId(turn: ConversationTurn) {
+  return `${chatInsightIdPrefix}${turn.id}`;
+}
+
+function findPrecedingQuestion(conversation: ConversationTurn[], turn: ConversationTurn) {
+  const index = conversation.findIndex((candidate) => candidate.id === turn.id);
+  const preceding = index > 0 ? conversation[index - 1] : null;
+
+  return preceding && preceding.role === 'user' ? preceding.text : '';
 }
 
 function isSavedInsightMatch(
@@ -2588,6 +2612,15 @@ function ReaderApp() {
   const savedInsights = activeLibraryItem.savedInsights;
   const readerHtml = useMemo(() => createReaderHtml(currentBook.paragraphs), [currentBook.paragraphs]);
 
+  const savedChatTurnIds = useMemo(
+    () =>
+      new Set(
+        savedInsights
+          .filter((note) => note.id.startsWith(chatInsightIdPrefix))
+          .map((note) => note.id.slice(chatInsightIdPrefix.length)),
+      ),
+    [savedInsights],
+  );
   const activeInsightSelection = selection ?? contextSelection;
   const isSaved =
     activeInsightSelection && selectedAction && insight
@@ -3246,6 +3279,38 @@ function ReaderApp() {
     highlightFeedbackTimer.current = setTimeout(() => {
       setHighlightedSelectionId((currentId) => (currentId === highlightedId ? null : currentId));
     }, 1400);
+  }
+
+  function saveChatTurn(turn: ConversationTurn) {
+    const insightId = createChatInsightId(turn);
+
+    if (savedInsights.some((note) => note.id === insightId)) {
+      return;
+    }
+
+    const question = findPrecedingQuestion(activeLibraryItem.conversation, turn);
+    const topSource = turn.sources?.[0];
+    const paragraphId = topSource?.paragraphId ?? turn.contextParagraphId ?? readingLocation?.paragraphId ?? '';
+
+    updateActiveLibraryItem((item) => ({
+      ...item,
+      lastOpenedAt: new Date().toISOString(),
+      savedInsights: [
+        ...item.savedInsights,
+        {
+          action: 'ask',
+          body: turn.text,
+          bookTitle: currentBook.title,
+          createdAt: new Date().toISOString(),
+          eyebrow: question,
+          id: insightId,
+          paragraphId,
+          selectedText: topSource?.excerpt ?? '',
+          selectionKind: 'paragraph',
+          sourceRef: topSource?.sourceRef ?? getParagraphSourceRef(paragraphId, currentBook),
+        },
+      ],
+    }));
   }
 
   async function importBook() {
@@ -4193,6 +4258,8 @@ function ReaderApp() {
                         onNavigateSource={navigateToSource}
                         onClearSelection={clearContextChip}
                         onClose={() => setIsThreadOpen(false)}
+                        onSaveTurn={saveChatTurn}
+                        savedTurnIds={savedChatTurnIds}
                       />
                     </View>
                   </View>
@@ -5296,9 +5363,11 @@ function SavedNotesSheet({
                       {sourceLabel}
                     </Text>
                   ) : null}
-                  <Text numberOfLines={2} style={styles.savedNoteSelection}>
-                    {note.selectedText}
-                  </Text>
+                  {note.selectedText ? (
+                    <Text numberOfLines={2} style={styles.savedNoteSelection}>
+                      {note.selectedText}
+                    </Text>
+                  ) : null}
                   {note.body ? (
                     <Text numberOfLines={3} style={styles.savedNoteBody}>
                       {note.body}
@@ -5373,9 +5442,16 @@ function SavedNoteEditorSheet({
               <X color={colors.ink} size={18} strokeWidth={2.2} />
             </Pressable>
           </View>
-          <Text numberOfLines={2} style={styles.savedNoteSelection}>
-            {note.selectedText}
-          </Text>
+          {note.action === 'ask' && note.eyebrow ? (
+            <Text numberOfLines={2} style={styles.savedNoteSelection}>
+              {note.eyebrow}
+            </Text>
+          ) : null}
+          {note.selectedText ? (
+            <Text numberOfLines={2} style={styles.savedNoteSelection}>
+              {note.selectedText}
+            </Text>
+          ) : null}
           {note.body ? (
             <Text numberOfLines={3} style={styles.noteEditorSource}>
               {note.body}
