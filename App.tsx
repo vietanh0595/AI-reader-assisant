@@ -4,6 +4,7 @@ import type { DocumentPickerAsset } from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
 import { requireOptionalNativeModule } from 'expo';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -24,6 +25,7 @@ import {
   Pencil,
   Search,
   Send,
+  Share2,
   SlidersHorizontal,
   Sparkles,
   Trash2,
@@ -1385,6 +1387,62 @@ function formatSavedInsightForExport(note: SavedInsight, index: number) {
   return lines.join('\n');
 }
 
+function formatSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsights: SavedInsight[]) {
+  const sortedNotes = [...savedInsights].sort((firstNote, secondNote) =>
+    firstNote.createdAt.localeCompare(secondNote.createdAt),
+  );
+  const header = `# ${readerBook.title}\n\n_${readerBook.author}_`;
+  const body = sortedNotes.map(formatSavedInsightAsMarkdown).join('\n\n---\n\n');
+
+  return body ? `${header}\n\n---\n\n${body}\n` : `${header}\n`;
+}
+
+function formatSavedInsightAsMarkdown(note: SavedInsight, index: number) {
+  const sourceLabel = formatSourceRef(note.sourceRef);
+  const userNote = normalizeSelectionText(note.userNote ?? '');
+  const quotedSelection = normalizeSelectionText(note.selectedText).replace(/\n/g, '\n> ');
+  const lines = [`### ${index + 1}. ${getInsightActionLabel(note.action)} — ${formatSavedNoteDate(note.createdAt)}`];
+
+  if (sourceLabel) {
+    lines.push(`*${sourceLabel}*`);
+  }
+
+  lines.push(`> ${quotedSelection}`, `**AI:** ${normalizeSelectionText(note.body)}`);
+
+  if (userNote) {
+    lines.push(`**Note:** ${userNote}`);
+  }
+
+  return lines.join('\n\n');
+}
+
+function slugifyForFileName(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return slug || 'book';
+}
+
+async function exportSavedInsightsAsMarkdown(readerBook: ReaderBook, savedInsights: SavedInsight[]) {
+  const canShare = await Sharing.isAvailableAsync();
+
+  if (!canShare) {
+    throw new Error('Sharing is not available on this device.');
+  }
+
+  const markdown = formatSavedInsightsAsMarkdown(readerBook, savedInsights);
+  const fileUri = `${FileSystem.cacheDirectory}${slugifyForFileName(readerBook.title)}-notes.md`;
+
+  await FileSystem.writeAsStringAsync(fileUri, markdown);
+  await Sharing.shareAsync(fileUri, {
+    mimeType: 'text/markdown',
+    dialogTitle: 'Export saved notes',
+    UTI: 'net.daringfireball.markdown',
+  });
+}
+
 function formatSavedNoteDate(value: string) {
   const date = new Date(value);
 
@@ -2435,6 +2493,7 @@ function ReaderApp() {
   const [editingNote, setEditingNote] = useState<SavedInsight | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [notesCopyFeedback, setNotesCopyFeedback] = useState(false);
+  const [notesExportPending, setNotesExportPending] = useState(false);
   // Mind map state
   const [mindMapOpen, setMindMapOpen] = useState(false);
   const [mindMapBookId, setMindMapBookId] = useState<string | null>(null);
@@ -3462,6 +3521,22 @@ function ReaderApp() {
     }, 1500);
   }
 
+  async function exportSavedInsights() {
+    if (savedInsights.length === 0 || notesExportPending) {
+      return;
+    }
+
+    setNotesExportPending(true);
+
+    try {
+      await exportSavedInsightsAsMarkdown(currentBook, savedInsights);
+    } catch (error) {
+      Alert.alert('Export failed', 'Could not export saved notes. Please try again.');
+    } finally {
+      setNotesExportPending(false);
+    }
+  }
+
   function navigateToSource(paragraphId: string, excerpt?: string) {
     setIsThreadCollapsed(true);
     updateReadingLocation(paragraphId);
@@ -4071,6 +4146,7 @@ function ReaderApp() {
               {isSavedNotesOpen ? (
                 <SavedNotesSheet
                   copyFeedback={notesCopyFeedback}
+                  exportPending={notesExportPending}
                   notes={savedInsights}
                   onClose={() => {
                     setIsSavedNotesOpen(false);
@@ -4079,6 +4155,7 @@ function ReaderApp() {
                   onCopyNotes={() => void copySavedInsightsToClipboard()}
                   onDeleteNote={deleteSavedInsight}
                   onEditNote={startEditingSavedInsight}
+                  onExportNotes={() => void exportSavedInsights()}
                   onSearchNotes={setNoteSearchQuery}
                   onSelectNote={openSavedInsight}
                   searchQuery={noteSearchQuery}
@@ -4959,21 +5036,25 @@ function ReaderFooter({
 
 function SavedNotesSheet({
   copyFeedback,
+  exportPending,
   notes,
   onClose,
   onCopyNotes,
   onDeleteNote,
   onEditNote,
+  onExportNotes,
   onSearchNotes,
   onSelectNote,
   searchQuery,
 }: {
   copyFeedback: boolean;
+  exportPending: boolean;
   notes: SavedInsight[];
   onClose: () => void;
   onCopyNotes: () => void;
   onDeleteNote: (noteId: string) => void;
   onEditNote: (note: SavedInsight) => void;
+  onExportNotes: () => void;
   onSearchNotes: (value: string) => void;
   onSelectNote: (note: SavedInsight) => void;
   searchQuery: string;
@@ -5001,22 +5082,38 @@ function SavedNotesSheet({
             <Text style={styles.tocTitle}>Saved notes</Text>
             <Text style={styles.savedNotesCount}>{notes.length} total</Text>
           </View>
-          <Pressable
-            accessibilityLabel="Copy saved notes"
-            accessibilityRole="button"
-            disabled={notes.length === 0}
-            onPress={onCopyNotes}
-            style={[styles.savedNotesCopyButton, notes.length === 0 && styles.disabledButton]}
-          >
-            {copyFeedback ? (
-              <Check color={colors.sageDark} size={16} strokeWidth={2.2} />
-            ) : (
-              <CopyIcon color={colors.ink} size={16} strokeWidth={2} />
-            )}
-            <Text style={[styles.savedNotesCopyText, copyFeedback && styles.savedButtonText]}>
-              {copyFeedback ? 'Copied' : 'Copy'}
-            </Text>
-          </Pressable>
+          <View style={styles.savedNotesActionRow}>
+            <Pressable
+              accessibilityLabel="Copy saved notes"
+              accessibilityRole="button"
+              disabled={notes.length === 0}
+              onPress={onCopyNotes}
+              style={[styles.savedNotesCopyButton, notes.length === 0 && styles.disabledButton]}
+            >
+              {copyFeedback ? (
+                <Check color={colors.sageDark} size={16} strokeWidth={2.2} />
+              ) : (
+                <CopyIcon color={colors.ink} size={16} strokeWidth={2} />
+              )}
+              <Text style={[styles.savedNotesCopyText, copyFeedback && styles.savedButtonText]}>
+                {copyFeedback ? 'Copied' : 'Copy'}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Export saved notes as Markdown"
+              accessibilityRole="button"
+              disabled={notes.length === 0 || exportPending}
+              onPress={onExportNotes}
+              style={[styles.savedNotesCopyButton, (notes.length === 0 || exportPending) && styles.disabledButton]}
+            >
+              {exportPending ? (
+                <ActivityIndicator color={colors.ink} size="small" />
+              ) : (
+                <Share2 color={colors.ink} size={16} strokeWidth={2} />
+              )}
+              <Text style={styles.savedNotesCopyText}>Export</Text>
+            </Pressable>
+          </View>
         </View>
         {notes.length > 0 ? (
           <View style={styles.savedNotesSearchRow}>
@@ -6458,6 +6555,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0,
     lineHeight: 16,
+  },
+  savedNotesActionRow: {
+    flexDirection: 'row',
+    gap: 8,
   },
   savedNotesCopyButton: {
     alignItems: 'center',
