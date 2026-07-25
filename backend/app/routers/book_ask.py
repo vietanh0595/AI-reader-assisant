@@ -94,6 +94,7 @@ def ask_book(
         question=ask_request.question,
         history=[t.model_dump() for t in ask_request.history],
         selected_text=ask_request.selected_text,
+        quoted_answer=ask_request.quoted_answer,
         current_reading_order=ask_request.current_reading_order,
         include_whole_book=ask_request.include_whole_book,
         allow_general_knowledge=ask_request.allow_general_knowledge,

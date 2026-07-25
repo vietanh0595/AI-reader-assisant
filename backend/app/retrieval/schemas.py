@@ -23,6 +23,7 @@ class BookAskRequest(BaseModel):
     allow_general_knowledge: bool = Field(default=False, alias="allowGeneralKnowledge")
     history: list[ConversationTurn] = Field(default_factory=list, max_length=40)
     selected_text: Optional[str] = Field(default=None, alias="selectedText", max_length=4000)
+    quoted_answer: Optional[str] = Field(default=None, alias="quotedAnswer", max_length=4000)
 
 
 class BookSourceResponse(BaseModel):

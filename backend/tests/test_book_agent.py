@@ -156,6 +156,43 @@ def test_agent_includes_history_and_selection_in_input():
     assert "highlighted passage" in joined
 
 
+def test_agent_phrases_quoted_answer_honestly_not_as_book_text():
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="E", body="B", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    agent.answer(
+        user_id=USER_ID, book_id=BOOK_ID, question="example of this",
+        history=[{"role": "user", "content": "Explain this passage"},
+                  {"role": "assistant", "content": "consumer purchases drive economic activity"}],
+        selected_text=None, current_reading_order=0, include_whole_book=True,
+        quoted_answer="consumer purchases drive economic activity",
+    )
+    sent = client.calls[0]["input"]
+    last = sent[-1]
+    assert "consumer purchases drive economic activity" in last["content"]
+    assert "your own earlier answer" in last["content"]
+    assert "I was reading" not in last["content"]
+
+
+def test_agent_prefers_selected_text_over_quoted_answer_when_both_present():
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=True, eyebrow="E", body="B", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+    agent.answer(
+        user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+        selected_text="real book text", current_reading_order=0, include_whole_book=True,
+        quoted_answer="an old answer",
+    )
+    sent = client.calls[0]["input"]
+    last = sent[-1]
+    assert "real book text" in last["content"]
+    assert "an old answer" not in last["content"]
+
+
 def test_grounded_mode_uses_strict_prompt_and_refuses_without_sources():
     # Default (allow_general_knowledge=False): no citations -> refuse.
     client = FakeOpenAI([

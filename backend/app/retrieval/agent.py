@@ -109,11 +109,12 @@ class BookAgent:
     def answer(self, *, user_id: UUID, book_id: UUID, question: str,
                history: list[dict], selected_text: Optional[str],
                current_reading_order: int, include_whole_book: bool,
-               allow_general_knowledge: bool = False) -> BookAnswer:
+               allow_general_knowledge: bool = False,
+               quoted_answer: Optional[str] = None) -> BookAnswer:
         request_id = str(uuid.uuid4())
         max_reading_order = None if include_whole_book else current_reading_order
         evidence_by_id: dict[str, EvidenceItem] = {}
-        input_items: list[Any] = self._build_input(history, question, selected_text)
+        input_items: list[Any] = self._build_input(history, question, selected_text, quoted_answer)
 
         for round_index in range(MAX_TOOL_ROUNDS):
             response = self._call(input_items, with_tools=True,
@@ -148,18 +149,31 @@ class BookAgent:
         return self._finalize(request_id, response.output_parsed, evidence_by_id,
                               allow_general_knowledge=allow_general_knowledge)
 
-    def _build_input(self, history: list[dict], question: str, selected_text: Optional[str]) -> list[Any]:
+    def _build_input(self, history: list[dict], question: str, selected_text: Optional[str],
+                      quoted_answer: Optional[str] = None) -> list[Any]:
         items: list[Any] = []
         for turn in history:
             role = turn["role"] if isinstance(turn, dict) else turn.role
             content = turn["content"] if isinstance(turn, dict) else turn.content
             items.append({"role": role, "content": content})
-        # Append selected_text inline so the model treats it as informational context,
-        # not a constraint. A separate preceding message caused the model to anchor on
-        # it and abstain when the question ranged beyond that passage.
+        # Append context inline so the model treats it as informational, not a
+        # constraint. A separate preceding message caused the model to anchor on it and
+        # abstain when the question ranged beyond that passage.
+        #
+        # selected_text and quoted_answer are mutually exclusive and phrased honestly:
+        # selected_text is real book text the reader selected. quoted_answer is the
+        # model's own prior turn, long-pressed to follow up on — never phrased as book
+        # text, since that previously sent the model searching the book for wording
+        # matching its own paraphrase instead of the book's actual text. Naming the
+        # target turn explicitly also matters in a long, multi-topic thread: dropping
+        # this context entirely (rather than just fixing its phrasing) let the model
+        # drift to whichever earlier topic had more history weight instead of the turn
+        # actually being followed up on.
         user_content = question
         if selected_text:
             user_content = f"{question}\n\nFor context, I was reading: \"{selected_text}\""
+        elif quoted_answer:
+            user_content = f"{question}\n\n(Following up on your own earlier answer: \"{quoted_answer}\")"
         items.append({"role": "user", "content": user_content})
         return items
 

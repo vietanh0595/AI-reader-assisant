@@ -46,6 +46,7 @@ export type RequestBookAskArgs = {
   accessToken: string;
   history?: { role: 'user' | 'assistant'; content: string }[];
   selectedText?: string;
+  quotedAnswer?: string;
 };
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -65,6 +66,7 @@ export async function requestBookAsk(
     accessToken,
     history,
     selectedText,
+    quotedAnswer,
   } = args;
 
   const url = `${apiBaseUrl}/library/books/${cloudBookId}/ask`;
@@ -83,6 +85,7 @@ export async function requestBookAsk(
       allowGeneralKnowledge,
       history,
       selectedText,
+      quotedAnswer,
     }),
   });
 
