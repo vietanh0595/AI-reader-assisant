@@ -37,6 +37,8 @@ import {
 } from 'lucide-react-native';
 import { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './src/auth/AuthProvider';
+import { AnswerMarkdown } from './src/components/AnswerMarkdown';
+import { flattenAnswerMarkdown } from './src/components/parseAnswerMarkdown';
 import { BookSources } from './src/components/BookSources';
 import { ConversationThread } from './src/components/ConversationThread';
 import { MindMapScreen } from './src/components/MindMapScreen';
@@ -2566,6 +2568,7 @@ function ReaderApp() {
   const [noteSearchQuery, setNoteSearchQuery] = useState('');
   const [editingNote, setEditingNote] = useState<SavedInsight | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
+  const [editingNoteQuestion, setEditingNoteQuestion] = useState('');
   const [notesCopyFeedback, setNotesCopyFeedback] = useState(false);
   const [notesExportPending, setNotesExportPending] = useState(false);
   // Mind map state
@@ -3664,11 +3667,13 @@ function ReaderApp() {
   function startEditingSavedInsight(note: SavedInsight) {
     setEditingNote(note);
     setEditingNoteText(note.userNote ?? '');
+    setEditingNoteQuestion(note.question ?? '');
   }
 
   function cancelEditingSavedInsight() {
     setEditingNote(null);
     setEditingNoteText('');
+    setEditingNoteQuestion('');
   }
 
   function saveEditedSavedInsight() {
@@ -3677,6 +3682,7 @@ function ReaderApp() {
     }
 
     const trimmedNote = editingNoteText.trim();
+    const trimmedQuestion = editingNoteQuestion.trim();
     const updatedAt = new Date().toISOString();
 
     updateActiveLibraryItem((item) => ({
@@ -3686,6 +3692,10 @@ function ReaderApp() {
         savedInsight.id === editingNote.id
           ? {
               ...savedInsight,
+              // Only notes that already carry a question can gain one, so editing a
+              // highlight can't silently invent a headline for it.
+              question:
+                editingNote.question === undefined ? savedInsight.question : trimmedQuestion || undefined,
               updatedAt,
               userNote: trimmedNote || undefined,
             }
@@ -3694,6 +3704,7 @@ function ReaderApp() {
     }));
     setEditingNote(null);
     setEditingNoteText('');
+    setEditingNoteQuestion('');
   }
 
   async function copySavedInsightsToClipboard() {
@@ -4360,9 +4371,12 @@ function ReaderApp() {
               {editingNote ? (
                 <SavedNoteEditorSheet
                   note={editingNote}
+                  noteQuestion={editingNoteQuestion}
                   noteText={editingNoteText}
+                  onChangeNoteQuestion={setEditingNoteQuestion}
                   onChangeNoteText={setEditingNoteText}
                   onClose={cancelEditingSavedInsight}
+                  onNavigateSource={navigateToSource}
                   onSave={saveEditedSavedInsight}
                 />
               ) : null}
@@ -5368,7 +5382,7 @@ function SavedNotesSheet({
                 >
                   <View style={styles.savedNoteHeader}>
                     <Text numberOfLines={1} style={styles.savedNoteEyebrow}>
-                      {note.eyebrow}
+                      {getSavedNoteHeadline(note)}
                     </Text>
                     <View style={styles.savedNoteActions}>
                       <Text style={styles.savedNoteAction}>{getInsightActionLabel(note.action)}</Text>
@@ -5408,7 +5422,7 @@ function SavedNotesSheet({
                   ) : null}
                   {note.body ? (
                     <Text numberOfLines={3} style={styles.savedNoteBody}>
-                      {note.body}
+                      {flattenAnswerMarkdown(note.body)}
                     </Text>
                   ) : null}
                   {note.userNote ? (
@@ -5446,21 +5460,32 @@ function doesSavedNoteMatchQuery(note: SavedInsight, normalizedQuery: string) {
 
 function SavedNoteEditorSheet({
   note,
+  noteQuestion,
   noteText,
+  onChangeNoteQuestion,
   onChangeNoteText,
   onClose,
+  onNavigateSource,
   onSave,
 }: {
   note: SavedInsight;
+  noteQuestion: string;
   noteText: string;
+  onChangeNoteQuestion: (value: string) => void;
   onChangeNoteText: (value: string) => void;
   onClose: () => void;
+  onNavigateSource: (paragraphId: string, excerpt?: string) => void;
   onSave: () => void;
 }) {
-  const canSave = noteText.trim() !== (note.userNote ?? '').trim();
+  const canSave =
+    noteText.trim() !== (note.userNote ?? '').trim() ||
+    noteQuestion.trim() !== (note.question ?? '').trim();
   const sourceLabel = formatSourceRef(note.sourceRef);
   const keyboardOverlap = useKeyboardOverlap();
-  const question = note.action === 'ask' ? normalizeSelectionText(note.eyebrow) : '';
+  const citationSources = (note.citations ?? []).map((citation, index) => ({
+    ...citation,
+    id: `${note.id}-citation-${index}`,
+  }));
 
   return (
     <View style={styles.sheetLayer}>
@@ -5482,17 +5507,35 @@ function SavedNoteEditorSheet({
             this sheet is the only place a saved note can be read in its entirety, so it
             scrolls instead of truncating. It shrinks while the keyboard is up so the
             note input and the Save button stay reachable on shorter screens. */}
-        {question || note.selectedText || note.body ? (
+        {note.question !== undefined ? (
+          <TextInput
+            multiline
+            onChangeText={onChangeNoteQuestion}
+            placeholder="What was the question?"
+            placeholderTextColor="#8c8a84"
+            style={styles.noteEditorQuestionInput}
+            value={noteQuestion}
+          />
+        ) : null}
+        {note.selectedText || note.body || citationSources.length > 0 ? (
           <ScrollView
             style={[styles.noteEditorContext, keyboardOverlap > 0 && styles.noteEditorContextCompact]}
             contentContainerStyle={styles.noteEditorContextContent}
             showsVerticalScrollIndicator
           >
-            {question ? <Text style={styles.noteEditorQuestion}>{question}</Text> : null}
             {note.selectedText ? (
               <Text style={styles.noteEditorSelection}>{note.selectedText}</Text>
             ) : null}
-            {note.body ? <Text style={styles.noteEditorSource}>{note.body}</Text> : null}
+            {note.body ? (
+              <View style={styles.noteEditorAnswer}>
+                <AnswerMarkdown text={note.body} />
+              </View>
+            ) : null}
+            {citationSources.length > 0 ? (
+              <View style={styles.noteEditorCitations}>
+                <BookSources sources={citationSources} onNavigate={onNavigateSource} />
+              </View>
+            ) : null}
           </ScrollView>
         ) : null}
         <TextInput
@@ -7033,13 +7076,28 @@ const styles = StyleSheet.create({
   noteEditorContextContent: {
     paddingBottom: 2,
   },
-  noteEditorQuestion: {
+  noteEditorQuestionInput: {
+    borderColor: '#d6d3cc',
+    borderRadius: 8,
+    borderWidth: 1,
     color: colors.ink,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     letterSpacing: 0,
-    lineHeight: 18,
-    marginBottom: 6,
+    lineHeight: 19,
+    marginBottom: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  noteEditorAnswer: {
+    backgroundColor: colors.warmNote,
+    borderColor: colors.warmNoteBorder,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 10,
+  },
+  noteEditorCitations: {
+    marginTop: 10,
   },
   noteEditorSelection: {
     color: colors.mutedInk,
@@ -7048,18 +7106,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 18,
     marginBottom: 8,
-  },
-  noteEditorSource: {
-    backgroundColor: colors.warmNote,
-    borderColor: colors.warmNoteBorder,
-    borderRadius: 8,
-    borderWidth: 1,
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0,
-    lineHeight: 18,
-    padding: 10,
   },
   noteEditorInput: {
     borderColor: '#d6d3cc',
