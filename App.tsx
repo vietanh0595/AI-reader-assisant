@@ -3855,6 +3855,12 @@ function ReaderApp() {
     const chipText = ctx?.quotedText ?? activeCtx?.text ?? undefined;
     const chipParagraphId = ctx ? undefined : activeCtx?.paragraphId ?? undefined;
     const chipTurnId = ctx?.quotedTurnId ?? undefined;
+    // Only real book text goes to the API as selectedText — the backend frames it as
+    // "For context, I was reading: ...", which is false and misleading when ctx is a
+    // long-pressed AI answer, not a book passage. That answer is already in `history`,
+    // so nothing is lost; sending it again under a false "I was reading" framing was
+    // steering search_book toward the AI's paraphrase instead of the book's own wording.
+    const apiSelectedText = ctx ? undefined : activeCtx?.text ?? undefined;
     const cloudBookId = activeLibraryItem.wholeBookAi.cloudBookId;
 
     if (!cloudBookId) {
@@ -3907,7 +3913,7 @@ function ReaderApp() {
         allowGeneralKnowledge: opts?.allowGeneralKnowledge ?? false,
         accessToken: token,
         history: buildHistory(activeLibraryItem.conversation),
-        selectedText: chipText,
+        selectedText: apiSelectedText,
       });
 
       if (assistRequestId.current === requestId) {
