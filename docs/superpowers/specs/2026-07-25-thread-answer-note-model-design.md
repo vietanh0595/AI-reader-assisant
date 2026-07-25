@@ -144,8 +144,15 @@ menu interaction, which could not be tested via `fireEvent` in this RN version (
   non-quoted substantive subject is trimmed to 60 chars with an ellipsis.
 - `flattenAnswerMarkdown`: bullet lists, numbered lists, and bold spans reduce to readable plain text
   with no residual `-`, `**`, or `1.` markup.
-- `isSavedInsight`: accepts a pre-existing note with neither new field; accepts one with both; rejects
-  a `citations` entry missing `paragraphId`, `excerpt`, or `sourceRef`.
+- Export formatting moves out of `App.tsx` into `src/library/savedNoteExport.ts` so it can be tested at
+  all — today both formatters are private functions in a 7100-line file with no test file. The
+  extracted module takes a note already reduced to display-ready labels, keeping `App.tsx`'s local
+  `DocumentSourceRef`/`InsightAction` types and `formatSourceRef` out of it.
+
+`isSavedInsight` is verified on device rather than by a unit test: it depends on `isDocumentSourceRef`,
+`isRecord`, and `isFiniteNumber`, which serve many other `App.tsx` validators and are not worth
+extracting for this change. A note the validator wrongly rejects vanishes from the list, so "pre-existing
+notes still appear and open" is a sufficient and observable check.
 - Export formatters: a thread note emits its `**Q:**` line and citation list; a note with no genuine
   selection emits no empty blockquote; a Highlight (no body) still emits no `**AI:**` line.
 
