@@ -36,7 +36,7 @@ describe('composeNoteQuestion', () => {
 
   test('treats curly quotes the same as straight quotes', () => {
     const conversation = [
-      turn({ id: 'u1', role: 'user', text: 'Tell me more about "529 Plan", as discussed in this book.' }),
+      turn({ id: 'u1', role: 'user', text: 'Tell me more about “529 Plan”, as discussed in this book.' }),
       turn({ id: 'a1', role: 'assistant', text: 'A 529 plan is...' }),
       turn({ id: 'u2', role: 'user', text: 'example' }),
       turn({ id: 'a2', role: 'assistant', text: 'Here are two examples...' }),

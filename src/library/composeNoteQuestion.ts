@@ -4,7 +4,7 @@ const MIN_SUBSTANTIVE_WORDS = 5;
 const MIN_SUBSTANTIVE_CHARS = 30;
 const MAX_SUBJECT_CHARS = 60;
 // Templated questions are authored with straight quotes, but text can arrive curly.
-const QUOTED_SUBJECT = /[""]([^""]+)[""]/;
+const QUOTED_SUBJECT = /["“”"]([^“”]+)["“”"]/;
 
 // A bare follow-up ("example", "why", "more") is meaningless once lifted out of the
 // thread it was asked in. Resolve it against the conversation so a saved note stands
