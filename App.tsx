@@ -1282,10 +1282,13 @@ function getSavedNoteSearchResults(savedInsights: SavedInsight[], normalizedQuer
   const results: Array<SearchResult | null> = [...savedInsights]
     .sort((firstNote, secondNote) => secondNote.createdAt.localeCompare(firstNote.createdAt))
     .map((note) => {
+      // `question` and `eyebrow` are both searched: a thread note's question lives in
+      // `question`, but one saved before that field existed still has it in `eyebrow`.
       const searchableFields = [
         note.selectedText,
         note.body,
         note.userNote ?? '',
+        note.question ?? '',
         note.eyebrow,
         getInsightActionLabel(note.action),
       ];
@@ -1388,13 +1391,18 @@ function toExportableNote(note: SavedInsight): ExportableNote {
     actionLabel: getInsightActionLabel(note.action),
     body: normalizeSelectionText(note.body),
     citations: note.citations?.map((citation) => ({
-      chapterTitle: citation.chapterTitle,
+      // `?? undefined` guards a citation persisted with JSON `null` before saveChatTurn
+      // normalized these at the API boundary — see formatCitationLabel.
+      chapterTitle: citation.chapterTitle ?? undefined,
       excerpt: normalizeSelectionText(citation.excerpt),
-      pageIndex: citation.pageIndex,
-      pageLabel: citation.pageLabel,
+      pageIndex: citation.pageIndex ?? undefined,
+      pageLabel: citation.pageLabel ?? undefined,
     })),
     createdAt: note.createdAt,
-    question: normalizeSelectionText(note.question ?? ''),
+    // Only an `ask` note has a question: for one saved before the `question` field existed
+    // it is still sitting in `eyebrow`, so fall back to that rather than exporting no Q line.
+    // Every other action's eyebrow is an AI label, never a question, so it stays out.
+    question: note.action === 'ask' ? normalizeSelectionText(note.question ?? note.eyebrow) : '',
     selectedText: normalizeSelectionText(note.selectedText),
     sourceLabel: formatSourceRef(note.sourceRef),
     userNote: normalizeSelectionText(note.userNote ?? '') || undefined,
@@ -1550,7 +1558,15 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
   }
 
   if (Array.isArray(value.libraryItems)) {
-    const libraryItems = value.libraryItems.filter(isLibraryItem).map((item) => migrateLibraryItem(hydrateLibraryItem(item)));
+    // isLibraryItem deliberately does not validate individual saved notes; they are
+    // filtered here instead. One unparseable note then costs only that note — the book,
+    // its reading position, conversation, mind-map state and every other note survive.
+    // Same resilience as the legacy single-book path below, which already filters.
+    const libraryItems = value.libraryItems.filter(isLibraryItem).map((item) =>
+      migrateLibraryItem(
+        hydrateLibraryItem({ ...item, savedInsights: item.savedInsights.filter(isSavedInsight) }),
+      ),
+    );
 
     if (libraryItems.length === 0) {
       return null;
@@ -1585,18 +1601,20 @@ function coercePersistedReaderState(value: unknown): PersistedReaderState | null
   return null;
 }
 
+// Checks everything that makes an item usable, but only that `savedInsights` is an array —
+// NOT that every note in it validates. A single bad note must not cost the reader the whole
+// book, so notes are sanitized by the caller (coercePersistedReaderState) with
+// `.filter(isSavedInsight)`; nothing else may consume this predicate without doing the same.
 function isLibraryItem(value: unknown): value is LibraryItem {
   if (!isRecord(value) || !isReaderBook(value.book) || typeof value.id !== 'string') {
     return false;
   }
 
-  const savedInsights = Array.isArray(value.savedInsights) && value.savedInsights.every(isSavedInsight);
-
   return (
     typeof value.importedAt === 'string' &&
     typeof value.lastOpenedAt === 'string' &&
     (value.readingLocation === null || isReadingLocation(value.readingLocation)) &&
-    savedInsights
+    Array.isArray(value.savedInsights)
   );
 }
 
@@ -1744,6 +1762,19 @@ function isSavedCitation(value: unknown): value is SavedCitation {
 // does NOT use this — an eyebrow is a label, not a question.
 function getSavedNoteHeadline(note: SavedInsight): string {
   return note.question || note.eyebrow;
+}
+
+// "Does this note have, or can it have, an editable question?" — `undefined` means no
+// question field at all (a Highlight or an inline Explain must never gain one). An `ask`
+// note saved before the `question` field existed carries its question in `eyebrow`, so it
+// seeds the editor from there rather than opening blank. One place, so the editor's render
+// condition, the seed value, and the save guard can't drift apart.
+function getEditableSavedNoteQuestion(note: SavedInsight): string | undefined {
+  if (note.question !== undefined) {
+    return note.question;
+  }
+
+  return note.action === 'ask' ? note.eyebrow : undefined;
 }
 
 function isInsightAction(value: unknown): value is InsightAction {
@@ -2979,7 +3010,10 @@ function ReaderApp() {
     setSelectedAction(savedInsight.action);
     setInsight({
       body: savedInsight.body,
-      eyebrow: savedInsight.eyebrow,
+      // A thread note's title is its question, and its `eyebrow` is empty (or, for a note
+      // saved before the question field existed, holds the question). Same headline the
+      // saved-notes list and the editor use, so the reopened card can't disagree with them.
+      eyebrow: getSavedNoteHeadline(savedInsight),
     });
     setAssistError(null);
     setIsAssistLoading(false);
@@ -3318,9 +3352,22 @@ function ReaderApp() {
     }
 
     const askedTurn = findPrecedingUserTurn(activeLibraryItem.conversation, turn);
+    // The ask API sends absent optional fields as JSON `null`, not as omitted keys — an
+    // EPUB answer has no pageIndex, so that is the normal shape, not an edge case. `null`
+    // survives JSON.stringify where `undefined` is dropped, and a persisted `null` fails
+    // isSavedCitation on the next launch. Normalize here, at the boundary, then keep only
+    // citations that actually validate so nothing unparseable is ever written.
     const citations: SavedCitation[] = (turn.sources ?? [])
       .slice(0, 3)
-      .map(({ id: _id, ...citation }) => citation);
+      .map((source) => ({
+        chapterTitle: source.chapterTitle ?? undefined,
+        excerpt: source.excerpt,
+        pageIndex: source.pageIndex ?? undefined,
+        pageLabel: source.pageLabel ?? undefined,
+        paragraphId: source.paragraphId,
+        sourceRef: source.sourceRef,
+      }))
+      .filter(isSavedCitation);
     // Only a passage the reader actually selected earns this field. A citation is what
     // the retriever looked at, not what the reader pointed to, so it stays in
     // `citations` where it can't masquerade as a selection.
@@ -3667,7 +3714,7 @@ function ReaderApp() {
   function startEditingSavedInsight(note: SavedInsight) {
     setEditingNote(note);
     setEditingNoteText(note.userNote ?? '');
-    setEditingNoteQuestion(note.question ?? '');
+    setEditingNoteQuestion(getEditableSavedNoteQuestion(note) ?? '');
   }
 
   function cancelEditingSavedInsight() {
@@ -3692,10 +3739,13 @@ function ReaderApp() {
         savedInsight.id === editingNote.id
           ? {
               ...savedInsight,
-              // Only notes that already carry a question can gain one, so editing a
-              // highlight can't silently invent a headline for it.
+              // Only notes that have — or can have — an editable question can gain one, so
+              // editing a highlight can't silently invent a headline for it, while an `ask`
+              // note saved before the question field existed can finally persist one.
               question:
-                editingNote.question === undefined ? savedInsight.question : trimmedQuestion || undefined,
+                getEditableSavedNoteQuestion(editingNote) === undefined
+                  ? savedInsight.question
+                  : trimmedQuestion || undefined,
               updatedAt,
               userNote: trimmedNote || undefined,
             }
@@ -4376,7 +4426,15 @@ function ReaderApp() {
                   onChangeNoteQuestion={setEditingNoteQuestion}
                   onChangeNoteText={setEditingNoteText}
                   onClose={cancelEditingSavedInsight}
-                  onNavigateSource={navigateToSource}
+                  // A citation chip navigates the reader behind this sheet, so both it and
+                  // the notes list below it have to close first or the passage lands under
+                  // a dimmed overlay. Closing discards an in-progress edit, exactly as the
+                  // sheet's own X and Cancel already do.
+                  onNavigateSource={(paragraphId, excerpt) => {
+                    cancelEditingSavedInsight();
+                    setIsSavedNotesOpen(false);
+                    navigateToSource(paragraphId, excerpt);
+                  }}
                   onSave={saveEditedSavedInsight}
                 />
               ) : null}
@@ -5449,10 +5507,13 @@ function SavedNotesSheet({
 }
 
 function doesSavedNoteMatchQuery(note: SavedInsight, normalizedQuery: string) {
+  // Keep this list in step with getSavedNoteSearchResults' searchableFields — including
+  // `question`, so a thread note is findable by the question it answers.
   return [
     note.selectedText,
     note.body,
     note.userNote ?? '',
+    note.question ?? '',
     note.eyebrow,
     getInsightActionLabel(note.action),
   ].some((value) => normalizeSelectionText(value).toLowerCase().includes(normalizedQuery));
@@ -5477,9 +5538,12 @@ function SavedNoteEditorSheet({
   onNavigateSource: (paragraphId: string, excerpt?: string) => void;
   onSave: () => void;
 }) {
+  const editableQuestion = getEditableSavedNoteQuestion(note);
+  // Compare against the seeded question, not `note.question`, so opening a legacy `ask`
+  // note (question seeded from its eyebrow) doesn't enable Save before anything is edited.
   const canSave =
     noteText.trim() !== (note.userNote ?? '').trim() ||
-    noteQuestion.trim() !== (note.question ?? '').trim();
+    noteQuestion.trim() !== (editableQuestion ?? '').trim();
   const sourceLabel = formatSourceRef(note.sourceRef);
   const keyboardOverlap = useKeyboardOverlap();
   const citationSources = (note.citations ?? []).map((citation, index) => ({
@@ -5507,7 +5571,7 @@ function SavedNoteEditorSheet({
             this sheet is the only place a saved note can be read in its entirety, so it
             scrolls instead of truncating. It shrinks while the keyboard is up so the
             note input and the Save button stay reachable on shorter screens. */}
-        {note.question !== undefined ? (
+        {editableQuestion !== undefined ? (
           <TextInput
             multiline
             onChangeText={onChangeNoteQuestion}
@@ -5521,6 +5585,9 @@ function SavedNoteEditorSheet({
           <ScrollView
             style={[styles.noteEditorContext, keyboardOverlap > 0 && styles.noteEditorContextCompact]}
             contentContainerStyle={styles.noteEditorContextContent}
+            // Without this, the first tap on a citation chip while the question or note
+            // input has the keyboard up only dismisses the keyboard, swallowing the tap.
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator
           >
             {note.selectedText ? (

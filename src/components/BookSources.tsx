@@ -16,29 +16,37 @@ export function BookSources({ sources, onNavigate }: BookSourcesProps) {
     <View testID="book-sources-container">
       <Text style={styles.heading}>Sources</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.row}>
-        {sources.map((source) => (
-          <Pressable
-            key={source.id}
-            accessibilityRole="button"
-            accessibilityLabel={source.chapterTitle ? `Source: ${source.chapterTitle}` : 'Source'}
-            onPress={() => onNavigate(source.paragraphId, source.excerpt)}
-            style={styles.chip}
-          >
-            {source.chapterTitle ? (
-              <Text style={styles.chapterTitle} numberOfLines={1}>
-                {source.chapterTitle}
+        {sources.map((source) => {
+          // The ask API sends an absent pageIndex/pageLabel as JSON `null`, not as an
+          // omitted key — that is every EPUB answer. Gate nullish-safely: `!== undefined`
+          // would label an EPUB source "Page 1", because `null + 1` is 1.
+          const pageText =
+            source.pageLabel ?? (source.pageIndex != null ? `Page ${source.pageIndex + 1}` : undefined);
+
+          return (
+            <Pressable
+              key={source.id}
+              accessibilityRole="button"
+              accessibilityLabel={source.chapterTitle ? `Source: ${source.chapterTitle}` : 'Source'}
+              onPress={() => onNavigate(source.paragraphId, source.excerpt)}
+              style={styles.chip}
+            >
+              {source.chapterTitle ? (
+                <Text style={styles.chapterTitle} numberOfLines={1}>
+                  {source.chapterTitle}
+                </Text>
+              ) : null}
+              {pageText ? (
+                <Text style={styles.pageLabel} numberOfLines={1}>
+                  {pageText}
+                </Text>
+              ) : null}
+              <Text style={styles.excerpt} numberOfLines={2}>
+                {source.excerpt}
               </Text>
-            ) : null}
-            {source.pageIndex !== undefined ? (
-              <Text style={styles.pageLabel} numberOfLines={1}>
-                {source.pageLabel ?? `Page ${source.pageIndex + 1}`}
-              </Text>
-            ) : null}
-            <Text style={styles.excerpt} numberOfLines={2}>
-              {source.excerpt}
-            </Text>
-          </Pressable>
-        ))}
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </View>
   );

@@ -110,6 +110,19 @@ describe('formatCitationLabel', () => {
   test('falls back to a trimmed excerpt when there is no chapter or page', () => {
     expect(formatCitationLabel({ excerpt: 'Only for College' })).toBe('Only for College');
   });
+
+  // The ask API serializes an absent pageIndex/pageLabel as JSON `null` (every EPUB
+  // answer). saveChatTurn normalizes that to `undefined` before persisting, but a label
+  // must degrade gracefully rather than claim "Page 1" (`null + 1`) if one slips through.
+  test('treats a null pageIndex as no page at all, not Page 1', () => {
+    const citation = { excerpt: 'Only for College', pageIndex: null, pageLabel: null } as any;
+    expect(formatCitationLabel(citation)).toBe('Only for College');
+  });
+
+  test('keeps the chapter title when the pageIndex is null', () => {
+    const citation = { chapterTitle: 'Chapter 7', excerpt: 'x', pageIndex: null, pageLabel: null } as any;
+    expect(formatCitationLabel(citation)).toBe('Chapter 7');
+  });
 });
 
 describe('citations in exports', () => {

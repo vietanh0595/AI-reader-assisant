@@ -41,6 +41,25 @@ test('shows chapter title when available', async () => {
   expect(screen.getByText(/Chapter 3/)).toBeTruthy();
 });
 
+test('derives a page label from pageIndex', async () => {
+  const source = makeSource({ pageIndex: 174 });
+  await render(<BookSources sources={[source]} onNavigate={jest.fn()} />);
+  expect(screen.getByText('Page 175')).toBeTruthy();
+});
+
+// The ask API sends null, not an omitted key, for an EPUB answer's page fields.
+test('shows no page label when pageIndex and pageLabel arrive as null', async () => {
+  const source = makeSource({ pageIndex: null, pageLabel: null } as unknown as Partial<BookSource>);
+  await render(<BookSources sources={[source]} onNavigate={jest.fn()} />);
+  expect(screen.queryByText(/^Page /)).toBeNull();
+});
+
+test('prefers an explicit pageLabel even without a pageIndex', async () => {
+  const source = makeSource({ pageLabel: 'xii' });
+  await render(<BookSources sources={[source]} onNavigate={jest.fn()} />);
+  expect(screen.getByText('xii')).toBeTruthy();
+});
+
 test('shows excerpt text', async () => {
   const source = makeSource({ excerpt: 'Unique excerpt text here.' });
   await render(<BookSources sources={[source]} onNavigate={jest.fn()} />);

@@ -89,8 +89,11 @@ export function formatNoteAsMarkdown(note: ExportableNote, index: number): strin
 }
 
 export function formatCitationLabel(citation: ExportableCitation): string {
-  const page =
-    citation.pageLabel ?? (citation.pageIndex !== undefined ? `Page ${citation.pageIndex + 1}` : '');
+  // Nullish-safe on purpose: the ask API serializes an absent pageIndex as JSON `null`
+  // (every EPUB answer), and a `null` that slipped past normalization at the API boundary
+  // would otherwise render as "Page 1" — `null + 1` is 1. A missing page falls through to
+  // the chapter title, or to the excerpt, exactly like a citation with no page info.
+  const page = citation.pageLabel ?? (citation.pageIndex != null ? `Page ${citation.pageIndex + 1}` : '');
   const parts = [citation.chapterTitle, page].filter((part) => part);
 
   return parts.length > 0 ? parts.join(' · ') : citation.excerpt.slice(0, 80);

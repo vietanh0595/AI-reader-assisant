@@ -44,6 +44,26 @@ describe('composeNoteQuestion', () => {
     expect(composeNoteQuestion(conversation, conversation[3])).toBe('529 Plan — example');
   });
 
+  test('extracts only the first quoted segment when a turn quotes two subjects', () => {
+    const conversation = [
+      turn({ id: 'u1', role: 'user', text: 'Tell me about "529 Plan" and "Roth IRA" together.' }),
+      turn({ id: 'a1', role: 'assistant', text: 'They differ in...' }),
+      turn({ id: 'u2', role: 'user', text: 'example' }),
+      turn({ id: 'a2', role: 'assistant', text: 'Here are two examples...' }),
+    ];
+    expect(composeNoteQuestion(conversation, conversation[3])).toBe('529 Plan — example');
+  });
+
+  test('extracts only the first quoted segment when the quotes are curly', () => {
+    const conversation = [
+      turn({ id: 'u1', role: 'user', text: 'Tell me about “529 Plan” and “Roth IRA” together.' }),
+      turn({ id: 'a1', role: 'assistant', text: 'They differ in...' }),
+      turn({ id: 'u2', role: 'user', text: 'example' }),
+      turn({ id: 'a2', role: 'assistant', text: 'Here are two examples...' }),
+    ];
+    expect(composeNoteQuestion(conversation, conversation[3])).toBe('529 Plan — example');
+  });
+
   test('passes a substantive question through verbatim', () => {
     const conversation = [
       turn({ id: 'u1', role: 'user', text: 'How do prepaid tuition plans differ from savings plans?' }),
