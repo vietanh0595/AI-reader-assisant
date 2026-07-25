@@ -16,6 +16,7 @@ import {
   Copy as CopyIcon,
   FileText,
   HelpCircle,
+  Highlighter,
   Library as LibraryIcon,
   List,
   LogIn,
@@ -75,10 +76,11 @@ import { parseEpubAsset, ParsedEpubBook } from './epub';
 
 type QuickAction = 'explain' | 'example' | 'rephrase' | 'ask';
 type ClipboardAction = 'copy';
-type SelectionAction = QuickAction | ClipboardAction;
+type HighlightAction = 'highlight';
+type SelectionAction = QuickAction | ClipboardAction | HighlightAction;
 type FollowUpAction = 'simpler';
 type SummaryAction = 'summarize';
-type InsightAction = QuickAction | FollowUpAction | SummaryAction;
+type InsightAction = QuickAction | FollowUpAction | SummaryAction | HighlightAction;
 type AssistContextScope = 'paragraph' | 'visiblePage' | 'chapter';
 type AskContextScope = 'selection' | 'visiblePage' | 'chapter' | 'book';
 type LastAskRequest = {
@@ -342,6 +344,7 @@ const selectionActions: Array<{ action: SelectionAction; icon: AppIcon; label: s
   { action: 'example', icon: BookOpen, label: 'Example' },
   { action: 'rephrase', icon: MessageCircle, label: 'Rephrase' },
   { action: 'ask', icon: HelpCircle, label: 'Ask' },
+  { action: 'highlight', icon: Highlighter, label: 'Mark' },
   { action: 'copy', icon: CopyIcon, label: 'Copy' },
 ];
 
@@ -1371,13 +1374,16 @@ function formatSavedInsightForExport(note: SavedInsight, index: number) {
   const lines = [
     `${index + 1}. ${getInsightActionLabel(note.action)} - ${formatSavedNoteDate(note.createdAt)}`,
     `Selected: ${normalizeSelectionText(note.selectedText)}`,
-    `AI: ${normalizeSelectionText(note.body)}`,
   ];
   const sourceLabel = formatSourceRef(note.sourceRef);
   const userNote = normalizeSelectionText(note.userNote ?? '');
 
   if (sourceLabel) {
     lines.splice(1, 0, `Source: ${sourceLabel}`);
+  }
+
+  if (note.body) {
+    lines.push(`AI: ${normalizeSelectionText(note.body)}`);
   }
 
   if (userNote) {
@@ -1407,7 +1413,11 @@ function formatSavedInsightAsMarkdown(note: SavedInsight, index: number) {
     lines.push(`*${sourceLabel}*`);
   }
 
-  lines.push(`> ${quotedSelection}`, `**AI:** ${normalizeSelectionText(note.body)}`);
+  lines.push(`> ${quotedSelection}`);
+
+  if (note.body) {
+    lines.push(`**AI:** ${normalizeSelectionText(note.body)}`);
+  }
 
   if (userNote) {
     lines.push(`**Note:** ${userNote}`);
@@ -1461,6 +1471,18 @@ function createSavedInsightId(selection: ReaderSelection, action: InsightAction,
   return `insight:${hashString(
     [selection.paragraphId, normalizeSelectionText(selection.text), action, insight.body].join('\n'),
   )}`;
+}
+
+function createHighlightId(selection: ReaderSelection) {
+  return `highlight:${hashString([selection.paragraphId, normalizeSelectionText(selection.text)].join('\n'))}`;
+}
+
+function isHighlightMatch(note: SavedInsight, selection: ReaderSelection) {
+  return (
+    note.action === 'highlight' &&
+    note.paragraphId === selection.paragraphId &&
+    normalizeSelectionText(note.selectedText) === normalizeSelectionText(selection.text)
+  );
 }
 
 function isSavedInsightMatch(
@@ -1708,7 +1730,8 @@ function isInsightAction(value: unknown): value is InsightAction {
     value === 'rephrase' ||
     value === 'ask' ||
     value === 'simpler' ||
-    value === 'summarize'
+    value === 'summarize' ||
+    value === 'highlight'
   );
 }
 
@@ -2479,6 +2502,7 @@ function ReaderApp() {
   const [assistError, setAssistError] = useState<string | null>(null);
   const [pendingRetry, setPendingRetry] = useState<{ questionText: string; ctx?: { quotedText: string; quotedTurnId?: string } } | null>(null);
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
+  const [highlightedSelectionId, setHighlightedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
   const [isThreadOpen, setIsThreadOpen] = useState(false);
@@ -2530,6 +2554,7 @@ function ReaderApp() {
 
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesCopyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isScanningDocument = scanStage !== 'idle';
   const scanStageLabel = getScanStageLabel(scanStage);
@@ -2861,6 +2886,19 @@ function ReaderApp() {
   }
 
   function openSavedInsight(savedInsight: SavedInsight) {
+    if (savedInsight.action === 'highlight') {
+      setIsSavedNotesOpen(false);
+      setIsTocOpen(false);
+      setIsAskOpen(false);
+      updateReadingLocation(savedInsight.paragraphId);
+      setScrollTarget({
+        nonce: Date.now(),
+        paragraphId: savedInsight.paragraphId,
+        excerpt: savedInsight.selectedText,
+      });
+      return;
+    }
+
     const restoredSelection = {
       id: `selection:${savedInsight.paragraphId}:${savedInsight.selectedText}`,
       contextScope: savedInsight.action === 'summarize' ? ('visiblePage' as AssistContextScope) : undefined,
@@ -2897,6 +2935,10 @@ function ReaderApp() {
     return () => {
       if (copyFeedbackTimer.current) {
         clearTimeout(copyFeedbackTimer.current);
+      }
+
+      if (highlightFeedbackTimer.current) {
+        clearTimeout(highlightFeedbackTimer.current);
       }
 
       if (notesCopyFeedbackTimer.current) {
@@ -3117,6 +3159,11 @@ function ReaderApp() {
       return;
     }
 
+    if (action === 'highlight') {
+      saveHighlight();
+      return;
+    }
+
     if (action === 'ask') {
       assistRequestId.current += 1;
       setLastAskRequest(null);
@@ -3156,6 +3203,48 @@ function ReaderApp() {
 
     copyFeedbackTimer.current = setTimeout(() => {
       setCopiedSelectionId((currentId) => (currentId === copiedId ? null : currentId));
+    }, 1400);
+  }
+
+  function saveHighlight() {
+    if (!selection) {
+      return;
+    }
+
+    const highlightedSelection = selection;
+    const highlightedId = highlightedSelection.id;
+    const alreadyHighlighted = savedInsights.some((note) => isHighlightMatch(note, highlightedSelection));
+
+    if (!alreadyHighlighted) {
+      updateActiveLibraryItem((item) => ({
+        ...item,
+        lastOpenedAt: new Date().toISOString(),
+        savedInsights: [
+          ...item.savedInsights,
+          {
+            action: 'highlight',
+            body: '',
+            bookTitle: currentBook.title,
+            createdAt: new Date().toISOString(),
+            eyebrow: '',
+            id: createHighlightId(highlightedSelection),
+            paragraphId: highlightedSelection.paragraphId,
+            selectedText: highlightedSelection.text,
+            selectionKind: highlightedSelection.selectionKind,
+            sourceRef: getParagraphSourceRef(highlightedSelection.paragraphId, currentBook),
+          },
+        ],
+      }));
+    }
+
+    setHighlightedSelectionId(highlightedId);
+
+    if (highlightFeedbackTimer.current) {
+      clearTimeout(highlightFeedbackTimer.current);
+    }
+
+    highlightFeedbackTimer.current = setTimeout(() => {
+      setHighlightedSelectionId((currentId) => (currentId === highlightedId ? null : currentId));
     }, 1400);
   }
 
@@ -4036,6 +4125,7 @@ function ReaderApp() {
                   errorMessage={assistError}
                   insight={insight}
                   isCopied={copiedSelectionId === selection.id}
+                  isHighlighted={highlightedSelectionId === selection.id}
                   isLoading={isAssistLoading}
                   isSaved={isSaved}
                   onAskMore={openConversationThread}
@@ -5157,7 +5247,7 @@ function SavedNotesSheet({
         {sortedNotes.length === 0 ? (
           <View style={styles.emptyNotes}>
             <Bookmark color={colors.mutedInk} size={20} strokeWidth={2} />
-            <Text style={styles.emptyNotesText}>Saved explanations will appear here.</Text>
+            <Text style={styles.emptyNotesText}>Highlights and saved explanations will appear here.</Text>
           </View>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} style={styles.savedNotesList}>
@@ -5209,9 +5299,11 @@ function SavedNotesSheet({
                   <Text numberOfLines={2} style={styles.savedNoteSelection}>
                     {note.selectedText}
                   </Text>
-                  <Text numberOfLines={3} style={styles.savedNoteBody}>
-                    {note.body}
-                  </Text>
+                  {note.body ? (
+                    <Text numberOfLines={3} style={styles.savedNoteBody}>
+                      {note.body}
+                    </Text>
+                  ) : null}
                   {note.userNote ? (
                     <Text numberOfLines={2} style={styles.savedNoteUserNote}>
                       Note: {note.userNote}
@@ -5284,9 +5376,11 @@ function SavedNoteEditorSheet({
           <Text numberOfLines={2} style={styles.savedNoteSelection}>
             {note.selectedText}
           </Text>
-          <Text numberOfLines={3} style={styles.noteEditorSource}>
-            {note.body}
-          </Text>
+          {note.body ? (
+            <Text numberOfLines={3} style={styles.noteEditorSource}>
+              {note.body}
+            </Text>
+          ) : null}
           <TextInput
             multiline
             onChangeText={onChangeNoteText}
@@ -5320,7 +5414,7 @@ function SavedNoteEditorSheet({
 function getSavedNoteFilterOptions(notes: SavedInsight[]): SavedNoteFilter[] {
   const filterOptions: SavedNoteFilter[] = ['all'];
 
-  for (const action of ['summarize', 'explain', 'ask', 'example', 'rephrase', 'simpler'] as InsightAction[]) {
+  for (const action of ['summarize', 'explain', 'ask', 'example', 'rephrase', 'simpler', 'highlight'] as InsightAction[]) {
     if (notes.some((note) => note.action === action)) {
       filterOptions.push(action);
     }
@@ -5341,6 +5435,8 @@ function getInsightActionLabel(action: InsightAction) {
       return 'Simpler';
     case 'summarize':
       return 'Summary';
+    case 'highlight':
+      return 'Highlight';
     default:
       return 'Explain';
   }
@@ -5503,6 +5599,7 @@ function SelectionPanel({
   errorMessage,
   insight,
   isCopied,
+  isHighlighted,
   isLoading,
   isSaved,
   onAskMore,
@@ -5518,6 +5615,7 @@ function SelectionPanel({
   errorMessage: string | null;
   insight: Insight | null;
   isCopied: boolean;
+  isHighlighted: boolean;
   isLoading: boolean;
   isSaved: boolean;
   onAskMore: () => void;
@@ -5534,6 +5632,7 @@ function SelectionPanel({
       <QuickActionMenu
         activeAction={activeAction}
         isCopied={isCopied}
+        isHighlighted={isHighlighted}
         onChooseAction={onChooseAction}
         selectionKind={selectionKind}
       />
@@ -5606,11 +5705,13 @@ function ContextInsightPanel({
 function QuickActionMenu({
   activeAction,
   isCopied,
+  isHighlighted,
   onChooseAction,
   selectionKind,
 }: {
   activeAction: InsightAction | null;
   isCopied: boolean;
+  isHighlighted: boolean;
   onChooseAction: (action: SelectionAction) => void;
   selectionKind: SelectionKind;
 }) {
@@ -5618,10 +5719,17 @@ function QuickActionMenu({
     <View style={styles.actionMenu}>
       {selectionActions.map(({ action, icon: Icon, label }) => {
         const isCopiedAction = action === 'copy' && isCopied;
-        const isActive = !isCopied && activeAction === action;
+        const isHighlightedAction = action === 'highlight' && isHighlighted;
+        const isActive = !isCopied && !isHighlighted && activeAction === action;
         const visibleLabel =
-          action === 'explain' && selectionKind === 'word' ? 'Define' : isCopiedAction ? 'Copied' : label;
-        const buttonColor = isActive || isCopiedAction ? colors.sageDark : colors.ink;
+          action === 'explain' && selectionKind === 'word'
+            ? 'Define'
+            : isCopiedAction
+              ? 'Copied'
+              : isHighlightedAction
+                ? 'Saved'
+                : label;
+        const buttonColor = isActive || isCopiedAction || isHighlightedAction ? colors.sageDark : colors.ink;
 
         return (
           <Pressable
@@ -5631,12 +5739,17 @@ function QuickActionMenu({
             onPress={() => onChooseAction(action)}
             style={({ pressed }) => [
               styles.actionButton,
-              (isActive || isCopiedAction) && styles.actionButtonActive,
+              (isActive || isCopiedAction || isHighlightedAction) && styles.actionButtonActive,
               pressed && styles.pressed,
             ]}
           >
             <Icon color={buttonColor} size={20} strokeWidth={1.8} />
-            <Text style={[styles.actionText, (isActive || isCopiedAction) && styles.actionTextActive]}>
+            <Text
+              style={[
+                styles.actionText,
+                (isActive || isCopiedAction || isHighlightedAction) && styles.actionTextActive,
+              ]}
+            >
               {visibleLabel}
             </Text>
           </Pressable>
