@@ -60,7 +60,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
-  KeyboardAvoidingView,
+  Keyboard,
   NativeModules,
   Platform,
   Pressable,
@@ -70,7 +70,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { parseEpubAsset, ParsedEpubBook } from './epub';
 
@@ -1502,11 +1502,14 @@ function createChatInsightId(turn: ConversationTurn) {
   return `${chatInsightIdPrefix}${turn.id}`;
 }
 
-function findPrecedingQuestion(conversation: ConversationTurn[], turn: ConversationTurn) {
+// The question, the passage it was asked about, and that passage's location all live on
+// the *user* turn — an assistant turn only carries its answer text and citations. Saving
+// an answer therefore has to look back one turn to recover any of its context.
+function findPrecedingUserTurn(conversation: ConversationTurn[], turn: ConversationTurn) {
   const index = conversation.findIndex((candidate) => candidate.id === turn.id);
   const preceding = index > 0 ? conversation[index - 1] : null;
 
-  return preceding && preceding.role === 'user' ? preceding.text : '';
+  return preceding && preceding.role === 'user' ? preceding : null;
 }
 
 function isSavedInsightMatch(
@@ -2069,6 +2072,35 @@ function getErrorMessage(error: unknown) {
 function stopPressPropagation(event: unknown) {
   const pressEvent = event as { stopPropagation?: () => void };
   pressEvent.stopPropagation?.();
+}
+
+// How much of the screen bottom the keyboard is currently covering.
+//
+// KeyboardAvoidingView measures its own frame relative to its parent, so inside the
+// absolutely-positioned sheet layer it computes an offset of zero and lets the keyboard
+// sit on top of the sheet's buttons. Track the keyboard directly instead — the same
+// approach ConversationThread already uses for its input row.
+function useKeyboardOverlap() {
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates?.height ?? 0);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  // Sheets sit inside the app SafeAreaView, whose bottom inset already lifts them above
+  // the home indicator; subtract it so that gap isn't counted twice.
+  return keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0;
 }
 
 function escapeHtml(value: string) {
@@ -3288,9 +3320,13 @@ function ReaderApp() {
       return;
     }
 
-    const question = findPrecedingQuestion(activeLibraryItem.conversation, turn);
+    const askedTurn = findPrecedingUserTurn(activeLibraryItem.conversation, turn);
     const topSource = turn.sources?.[0];
-    const paragraphId = topSource?.paragraphId ?? turn.contextParagraphId ?? readingLocation?.paragraphId ?? '';
+    // Prefer the answer's own top citation, then whatever passage the reader asked about,
+    // and only fall back to their current position if the question had no anchor at all.
+    const paragraphId =
+      topSource?.paragraphId ?? askedTurn?.contextParagraphId ?? readingLocation?.paragraphId ?? '';
+    const selectedText = topSource?.excerpt ?? askedTurn?.selectedText ?? '';
 
     updateActiveLibraryItem((item) => ({
       ...item,
@@ -3302,10 +3338,10 @@ function ReaderApp() {
           body: turn.text,
           bookTitle: currentBook.title,
           createdAt: new Date().toISOString(),
-          eyebrow: question,
+          eyebrow: askedTurn?.text ?? '',
           id: insightId,
           paragraphId,
-          selectedText: topSource?.excerpt ?? '',
+          selectedText,
           selectionKind: 'paragraph',
           sourceRef: topSource?.sourceRef ?? getParagraphSourceRef(paragraphId, currentBook),
         },
@@ -5421,68 +5457,67 @@ function SavedNoteEditorSheet({
 }) {
   const canSave = noteText.trim() !== (note.userNote ?? '').trim();
   const sourceLabel = formatSourceRef(note.sourceRef);
+  const keyboardOverlap = useKeyboardOverlap();
+  const question = note.action === 'ask' ? normalizeSelectionText(note.eyebrow) : '';
 
   return (
     <View style={styles.sheetLayer}>
       <Pressable accessibilityRole="button" style={styles.sheetScrim} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardContainer}
-      >
-        <View style={styles.noteEditorSheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.noteEditorHeader}>
-            <View>
-              <Text style={styles.tocTitle}>Edit note</Text>
-              <Text style={styles.savedNotesCount}>
-                {sourceLabel ? `${getInsightActionLabel(note.action)} - ${sourceLabel}` : getInsightActionLabel(note.action)}
-              </Text>
-            </View>
-            <Pressable accessibilityLabel="Close note editor" accessibilityRole="button" onPress={onClose} style={styles.noteEditorCloseButton}>
-              <X color={colors.ink} size={18} strokeWidth={2.2} />
-            </Pressable>
+      <View style={[styles.noteEditorSheet, { paddingBottom: 21 + keyboardOverlap }]}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.noteEditorHeader}>
+          <View>
+            <Text style={styles.tocTitle}>Edit note</Text>
+            <Text style={styles.savedNotesCount}>
+              {sourceLabel ? `${getInsightActionLabel(note.action)} - ${sourceLabel}` : getInsightActionLabel(note.action)}
+            </Text>
           </View>
-          {note.action === 'ask' && note.eyebrow ? (
-            <Text numberOfLines={2} style={styles.savedNoteSelection}>
-              {note.eyebrow}
-            </Text>
-          ) : null}
-          {note.selectedText ? (
-            <Text numberOfLines={2} style={styles.savedNoteSelection}>
-              {note.selectedText}
-            </Text>
-          ) : null}
-          {note.body ? (
-            <Text numberOfLines={3} style={styles.noteEditorSource}>
-              {note.body}
-            </Text>
-          ) : null}
-          <TextInput
-            multiline
-            onChangeText={onChangeNoteText}
-            placeholder="Add your note..."
-            placeholderTextColor="#8c8a84"
-            style={styles.noteEditorInput}
-            textAlignVertical="top"
-            value={noteText}
-          />
-          <View style={styles.sheetActions}>
-            <Pressable accessibilityRole="button" onPress={onClose} style={styles.sheetButton}>
-              <X color={colors.ink} size={16} strokeWidth={2} />
-              <Text style={styles.sheetButtonText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!canSave}
-              onPress={onSave}
-              style={[styles.sheetButton, styles.primarySheetButton, !canSave && styles.disabledButton]}
-            >
-              <Check color={colors.white} size={16} strokeWidth={2.2} />
-              <Text style={styles.primarySheetButtonText}>Save</Text>
-            </Pressable>
-          </View>
+          <Pressable accessibilityLabel="Close note editor" accessibilityRole="button" onPress={onClose} style={styles.noteEditorCloseButton}>
+            <X color={colors.ink} size={18} strokeWidth={2.2} />
+          </Pressable>
         </View>
-      </KeyboardAvoidingView>
+        {/* The passage and the AI answer are shown in full here rather than clipped —
+            this sheet is the only place a saved note can be read in its entirety, so it
+            scrolls instead of truncating. It shrinks while the keyboard is up so the
+            note input and the Save button stay reachable on shorter screens. */}
+        {question || note.selectedText || note.body ? (
+          <ScrollView
+            style={[styles.noteEditorContext, keyboardOverlap > 0 && styles.noteEditorContextCompact]}
+            contentContainerStyle={styles.noteEditorContextContent}
+            showsVerticalScrollIndicator
+          >
+            {question ? <Text style={styles.noteEditorQuestion}>{question}</Text> : null}
+            {note.selectedText ? (
+              <Text style={styles.noteEditorSelection}>{note.selectedText}</Text>
+            ) : null}
+            {note.body ? <Text style={styles.noteEditorSource}>{note.body}</Text> : null}
+          </ScrollView>
+        ) : null}
+        <TextInput
+          multiline
+          onChangeText={onChangeNoteText}
+          placeholder="Add your note..."
+          placeholderTextColor="#8c8a84"
+          style={styles.noteEditorInput}
+          textAlignVertical="top"
+          value={noteText}
+        />
+        <View style={styles.sheetActions}>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.sheetButton}>
+            <X color={colors.ink} size={16} strokeWidth={2} />
+            <Text style={styles.sheetButtonText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canSave}
+            onPress={onSave}
+            style={[styles.sheetButton, styles.primarySheetButton, !canSave && styles.disabledButton]}
+          >
+            <Check color={colors.white} size={16} strokeWidth={2.2} />
+            <Text style={styles.primarySheetButtonText}>Save</Text>
+          </Pressable>
+        </View>
+      </View>
     </View>
   );
 }
@@ -5574,15 +5609,13 @@ function SearchSheet({
   const shouldShowEmpty = trimmedQuery.length >= 2 && results.length === 0;
   const placeholder =
     scope === 'notes' ? 'Search saved notes' : scope === 'all' ? 'Search book and notes' : 'Search this book';
+  const keyboardOverlap = useKeyboardOverlap();
 
   return (
     <View style={styles.sheetLayer}>
       <Pressable accessibilityRole="button" style={styles.sheetScrim} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardContainer}
-      >
-        <View style={styles.searchSheet}>
+      <View style={styles.keyboardContainer}>
+        <View style={[styles.searchSheet, { paddingBottom: 18 + keyboardOverlap }]}>
           <View style={styles.sheetHandle} />
           <View style={styles.searchInputRow}>
             <Search color={colors.mutedInk} size={18} strokeWidth={2} />
@@ -5639,7 +5672,7 @@ function SearchSheet({
             ) : null}
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
@@ -6987,6 +7020,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 34,
   },
+  noteEditorContext: {
+    flexGrow: 0,
+    marginBottom: 10,
+    maxHeight: 260,
+  },
+  noteEditorContextCompact: {
+    maxHeight: 132,
+  },
+  noteEditorContextContent: {
+    paddingBottom: 2,
+  },
+  noteEditorQuestion: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  noteEditorSelection: {
+    color: colors.mutedInk,
+    fontFamily: readerFont,
+    fontSize: 13,
+    letterSpacing: 0,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
   noteEditorSource: {
     backgroundColor: colors.warmNote,
     borderColor: colors.warmNoteBorder,
@@ -6997,7 +7057,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0,
     lineHeight: 18,
-    marginBottom: 10,
     padding: 10,
   },
   noteEditorInput: {
