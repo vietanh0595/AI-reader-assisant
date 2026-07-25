@@ -110,3 +110,37 @@ test('treats a stray asterisk or dash mid-sentence as literal text, not a list',
 test('returns an empty array for an empty string', () => {
   expect(parseAnswerMarkdown('')).toEqual([]);
 });
+
+import { flattenAnswerMarkdown } from './parseAnswerMarkdown';
+
+describe('flattenAnswerMarkdown', () => {
+  test('strips bold markers', () => {
+    expect(flattenAnswerMarkdown('This is **important** text')).toBe('This is important text');
+  });
+
+  test('strips inline code backticks', () => {
+    expect(flattenAnswerMarkdown('Call `useMemo` here')).toBe('Call useMemo here');
+  });
+
+  test('flattens a bullet list into semicolon-separated text', () => {
+    const input = 'Two examples:\n- **First:** does a thing\n- **Second:** does another';
+    expect(flattenAnswerMarkdown(input)).toBe('Two examples: First: does a thing; Second: does another');
+  });
+
+  test('flattens a numbered list without its numbers', () => {
+    const input = '1. Check your plan\n2. Use funds wisely';
+    expect(flattenAnswerMarkdown(input)).toBe('Check your plan; Use funds wisely');
+  });
+
+  test('joins multiple paragraphs with a space', () => {
+    expect(flattenAnswerMarkdown('First para.\n\nSecond para.')).toBe('First para. Second para.');
+  });
+
+  test('returns an empty string for empty input', () => {
+    expect(flattenAnswerMarkdown('')).toBe('');
+  });
+
+  test('leaves plain text untouched', () => {
+    expect(flattenAnswerMarkdown('Just a sentence.')).toBe('Just a sentence.');
+  });
+});

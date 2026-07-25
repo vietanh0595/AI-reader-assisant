@@ -97,3 +97,21 @@ function parseInlineSpans(text: string): AnswerSpan[] {
 
   return spans;
 }
+
+// AnswerMarkdown renders one View per block, so numberOfLines can't clamp it. List
+// previews need a single Text instead, which means the same parsed blocks reduced to
+// plain prose — reusing the parser above rather than a second pass of regexes.
+export function flattenAnswerMarkdown(text: string): string {
+  return parseAnswerMarkdown(text)
+    .map((block) =>
+      block.type === 'paragraph'
+        ? joinSpans(block.spans)
+        : block.items.map(joinSpans).join('; '),
+    )
+    .filter((part) => part !== '')
+    .join(' ');
+}
+
+function joinSpans(spans: AnswerSpan[]): string {
+  return spans.map((span) => span.text).join('').trim();
+}
