@@ -1366,6 +1366,10 @@ function formatBookSourceMeta(book: ReaderBook) {
 }
 
 function toExportableNote(note: SavedInsight): ExportableNote {
+  // question/selectedText/body are normalized here, before savedNoteExport's formatters gate
+  // on them, so a whitespace-only field normalizes to '' and is treated as absent (no empty
+  // "Selected: " line). This is an intentional improvement over the pre-refactor behavior,
+  // which gated on the raw field and could emit a label with nothing after it.
   return {
     actionLabel: getInsightActionLabel(note.action),
     body: normalizeSelectionText(note.body),

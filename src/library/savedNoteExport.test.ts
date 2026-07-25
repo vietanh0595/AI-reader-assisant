@@ -47,6 +47,10 @@ describe('formatNoteAsText', () => {
   test('includes the user note when present', () => {
     expect(formatNoteAsText(note({ userNote: 'revisit this' }), 0)).toContain('Note: revisit this');
   });
+
+  test('omits the selected line for a whitespace-only selection', () => {
+    expect(formatNoteAsText(note({ selectedText: '   ' }), 0)).not.toContain('Selected:');
+  });
 });
 
 describe('formatNoteAsMarkdown', () => {
@@ -76,5 +80,10 @@ describe('formatNoteAsMarkdown', () => {
 
   test('emits no AI section for a highlight with no body', () => {
     expect(formatNoteAsMarkdown(note({ actionLabel: 'Highlight', body: '' }), 0)).not.toContain('**AI:**');
+  });
+
+  test('emits no blockquote for a whitespace-only selection', () => {
+    const markdown = formatNoteAsMarkdown(note({ selectedText: '   ' }), 0);
+    expect(markdown).not.toContain('>');
   });
 });

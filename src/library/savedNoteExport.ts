@@ -18,15 +18,18 @@ export function formatNoteAsText(note: ExportableNote, index: number): string {
     lines.push(`Source: ${note.sourceLabel}`);
   }
 
-  if (note.question) {
+  // question/selectedText/body gate on their trimmed value, not raw truthiness, so a
+  // whitespace-only field is treated as absent instead of emitting an empty labeled line
+  // (e.g. "Selected: " with nothing after it). This is intentional, not an oversight.
+  if (note.question.trim()) {
     lines.push(`Q: ${note.question}`);
   }
 
-  if (note.selectedText) {
+  if (note.selectedText.trim()) {
     lines.push(`Selected: ${note.selectedText}`);
   }
 
-  if (note.body) {
+  if (note.body.trim()) {
     lines.push(`AI: ${note.body}`);
   }
 
@@ -44,15 +47,17 @@ export function formatNoteAsMarkdown(note: ExportableNote, index: number): strin
     lines.push(`*${note.sourceLabel}*`);
   }
 
-  if (note.question) {
+  // See the matching comment in formatNoteAsText: gate on the trimmed value so a
+  // whitespace-only field is treated as absent.
+  if (note.question.trim()) {
     lines.push(`**Q:** ${note.question}`);
   }
 
-  if (note.selectedText) {
+  if (note.selectedText.trim()) {
     lines.push(`> ${note.selectedText.replace(/\n/g, '\n> ')}`);
   }
 
-  if (note.body) {
+  if (note.body.trim()) {
     lines.push(`**AI:** ${note.body}`);
   }
 
