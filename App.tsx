@@ -56,6 +56,7 @@ import type { WholeBookAiState } from './src/rag/types';
 import { selectPendingNotice, type PersistedPendingNotice } from './src/rag/backgroundNotice';
 import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
 import { appendTurns } from './src/library/appendTurn';
+import { composeNoteQuestion } from './src/library/composeNoteQuestion';
 import {
   formatNoteAsMarkdown,
   formatNoteAsText,
@@ -211,14 +212,25 @@ type ReadingLocation = {
   sourceRef?: DocumentSourceRef;
 };
 
+// BookSource minus its `id`, which is a per-request identifier (s0-0) that means
+// nothing once the request is over and would collide across saved notes.
+type SavedCitation = Omit<BookSource, 'id'>;
+
 type SavedInsight = {
   action: InsightAction;
   body: string;
   bookTitle: string;
+  // Every source the answer drew on, not one promoted to look like a passage the
+  // reader chose. Capped at 3, matching the backend.
+  citations?: SavedCitation[];
   createdAt: string;
+  // The AI's own short label. Not the question — see `question`.
   eyebrow: string;
   id: string;
   paragraphId: string;
+  // The self-contained question this note answers. Set for thread-saved notes.
+  question?: string;
+  // Only ever text the reader actually selected. Never a citation excerpt.
   selectedText: string;
   selectionKind: SelectionKind;
   sourceRef?: DocumentSourceRef;
@@ -1692,16 +1704,38 @@ function isSavedInsight(value: unknown): value is SavedInsight {
     isInsightAction(value.action) &&
     typeof value.body === 'string' &&
     typeof value.bookTitle === 'string' &&
+    (value.citations === undefined ||
+      (Array.isArray(value.citations) && value.citations.every(isSavedCitation))) &&
     typeof value.createdAt === 'string' &&
     typeof value.eyebrow === 'string' &&
     typeof value.id === 'string' &&
     typeof value.paragraphId === 'string' &&
+    (value.question === undefined || typeof value.question === 'string') &&
     typeof value.selectedText === 'string' &&
     (value.selectionKind === 'word' || value.selectionKind === 'phrase' || value.selectionKind === 'paragraph') &&
     (value.sourceRef === undefined || isDocumentSourceRef(value.sourceRef)) &&
     (value.updatedAt === undefined || typeof value.updatedAt === 'string') &&
     (value.userNote === undefined || typeof value.userNote === 'string')
   );
+}
+
+function isSavedCitation(value: unknown): value is SavedCitation {
+  return (
+    isRecord(value) &&
+    typeof value.excerpt === 'string' &&
+    typeof value.paragraphId === 'string' &&
+    isDocumentSourceRef(value.sourceRef) &&
+    (value.chapterTitle === undefined || typeof value.chapterTitle === 'string') &&
+    (value.pageIndex === undefined || isFiniteNumber(value.pageIndex)) &&
+    (value.pageLabel === undefined || typeof value.pageLabel === 'string')
+  );
+}
+
+// Thread notes are titled by their question; highlights and inline insights keep the
+// AI's eyebrow. One place, so the list and editor can't disagree. Export deliberately
+// does NOT use this — an eyebrow is a label, not a question.
+function getSavedNoteHeadline(note: SavedInsight): string {
+  return note.question || note.eyebrow;
 }
 
 function isInsightAction(value: unknown): value is InsightAction {
@@ -3275,32 +3309,40 @@ function ReaderApp() {
     }
 
     const askedTurn = findPrecedingUserTurn(activeLibraryItem.conversation, turn);
-    const topSource = turn.sources?.[0];
-    // Prefer the answer's own top citation, then whatever passage the reader asked about,
-    // and only fall back to their current position if the question had no anchor at all.
+    const citations: SavedCitation[] = (turn.sources ?? [])
+      .slice(0, 3)
+      .map(({ id: _id, ...citation }) => citation);
+    // Only a passage the reader actually selected earns this field. A citation is what
+    // the retriever looked at, not what the reader pointed to, so it stays in
+    // `citations` where it can't masquerade as a selection.
+    const selectedText = askedTurn?.selectedText ?? '';
     const paragraphId =
-      topSource?.paragraphId ?? askedTurn?.contextParagraphId ?? readingLocation?.paragraphId ?? '';
-    const selectedText = topSource?.excerpt ?? askedTurn?.selectedText ?? '';
+      askedTurn?.contextParagraphId ?? citations[0]?.paragraphId ?? readingLocation?.paragraphId ?? '';
+    const savedAt = new Date().toISOString();
+    const note: SavedInsight = {
+      action: 'ask',
+      body: turn.text,
+      bookTitle: currentBook.title,
+      citations: citations.length > 0 ? citations : undefined,
+      createdAt: savedAt,
+      eyebrow: '',
+      id: insightId,
+      paragraphId,
+      question: composeNoteQuestion(activeLibraryItem.conversation, turn),
+      selectedText,
+      selectionKind: 'paragraph',
+      sourceRef: citations[0]?.sourceRef ?? getParagraphSourceRef(paragraphId, currentBook),
+    };
 
     updateActiveLibraryItem((item) => ({
       ...item,
-      lastOpenedAt: new Date().toISOString(),
-      savedInsights: [
-        ...item.savedInsights,
-        {
-          action: 'ask',
-          body: turn.text,
-          bookTitle: currentBook.title,
-          createdAt: new Date().toISOString(),
-          eyebrow: askedTurn?.text ?? '',
-          id: insightId,
-          paragraphId,
-          selectedText,
-          selectionKind: 'paragraph',
-          sourceRef: topSource?.sourceRef ?? getParagraphSourceRef(paragraphId, currentBook),
-        },
-      ],
+      lastOpenedAt: savedAt,
+      savedInsights: [...item.savedInsights, note],
     }));
+    // Open the editor on the new note so the reader can correct a composed question and
+    // add their own thought while it's fresh. `editingNote` renders last in the sheet
+    // stack, so it lands above the open thread; closing it returns to the conversation.
+    startEditingSavedInsight(note);
   }
 
   async function importBook() {
