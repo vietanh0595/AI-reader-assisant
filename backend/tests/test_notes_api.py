@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _reset_anki_cards_rate_limiter():
+    from backend.app.rate_limit import _anki_cards_limiter
+    _anki_cards_limiter._requests.clear()
+    yield
 
 
 _VALID_PAYLOAD = {
