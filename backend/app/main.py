@@ -26,6 +26,7 @@ from .routers.auth import router as auth_router
 from .routers.book_ask import router as book_ask_router
 from .routers.indexing import router as indexing_router
 from .routers.mindmap import router as mindmap_router
+from .routers.notes import router as notes_router
 from .schemas import AssistRequest, AssistResponse, OcrRequest, OcrResponse
 
 
@@ -70,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(indexing_router)
     app.include_router(book_ask_router)
     app.include_router(mindmap_router)
+    app.include_router(notes_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -50,3 +50,21 @@ def check_ai_assist_rate_limit(request: Request) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests — please wait a few minutes and try again.",
         )
+
+
+ANKI_CARDS_RATE_LIMIT_MAX_REQUESTS = 20
+ANKI_CARDS_RATE_LIMIT_WINDOW_SECONDS = 600.0  # 10 minutes
+
+_anki_cards_limiter = SlidingWindowRateLimiter(
+    max_requests=ANKI_CARDS_RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=ANKI_CARDS_RATE_LIMIT_WINDOW_SECONDS,
+)
+
+
+def check_anki_cards_rate_limit(request: Request) -> None:
+    client_ip = get_client_ip(request)
+    if not _anki_cards_limiter.is_allowed(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests — please wait a few minutes and try again.",
+        )
