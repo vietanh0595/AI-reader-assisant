@@ -120,6 +120,9 @@ def _generate_chunk(client: OpenAI, model: str, notes: list[AnkiNoteInput]) -> l
 
 
 def generate_anki_cards(client: OpenAI, model: str, notes: list[AnkiNoteInput]) -> list[AnkiCardResult]:
+    if not notes:
+        return []
+
     chunks = [notes[i : i + CHUNK_SIZE] for i in range(0, len(notes), CHUNK_SIZE)]
     cards: list[AnkiCardResult] = []
 

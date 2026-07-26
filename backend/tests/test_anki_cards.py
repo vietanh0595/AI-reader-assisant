@@ -99,3 +99,12 @@ def test_a_failing_chunk_does_not_prevent_other_chunks_from_returning():
     returned_ids = {card.note_id for card in cards}
     assert "n0" not in returned_ids
     assert len(returned_ids) == 8  # the other chunk's 8 notes all came back
+
+
+def test_returns_empty_list_for_empty_notes_without_calling_openai():
+    client = MagicMock()
+
+    cards = generate_anki_cards(client, "gpt-5-mini", [])
+
+    assert cards == []
+    assert client.responses.parse.call_count == 0
