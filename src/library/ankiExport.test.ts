@@ -53,6 +53,33 @@ describe('toAnkiNoteInput', () => {
     const input = toAnkiNoteInput(note({ id: 'n4', action: 'highlight', userNote: 'revisit this' }));
     expect(input.userNote).toBe('revisit this');
   });
+
+  test('truncates a passage longer than the backend\'s 4000-char cap', () => {
+    const longPassage = 'a'.repeat(4500);
+    const input = toAnkiNoteInput(note({ id: 'n5', action: 'highlight', selectedText: longPassage }));
+    expect(input.passage).toHaveLength(4000);
+    expect(input.passage).toBe('a'.repeat(4000));
+  });
+
+  test('truncates an answer longer than the backend\'s 4000-char cap', () => {
+    const longAnswer = 'b'.repeat(4500);
+    const input = toAnkiNoteInput(note({ id: 'n6', action: 'explain', body: longAnswer }));
+    expect(input.answer).toHaveLength(4000);
+    expect(input.answer).toBe('b'.repeat(4000));
+  });
+
+  test('truncates a user note longer than the backend\'s 2000-char cap', () => {
+    const longUserNote = 'c'.repeat(2500);
+    const input = toAnkiNoteInput(note({ id: 'n7', action: 'highlight', userNote: longUserNote }));
+    expect(input.userNote).toHaveLength(2000);
+    expect(input.userNote).toBe('c'.repeat(2000));
+  });
+
+  test('does not truncate a passage at or under the cap', () => {
+    const exactPassage = 'd'.repeat(4000);
+    const input = toAnkiNoteInput(note({ id: 'n8', action: 'highlight', selectedText: exactPassage }));
+    expect(input.passage).toHaveLength(4000);
+  });
 });
 
 describe('formatAnkiCardLine', () => {

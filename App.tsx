@@ -5459,7 +5459,7 @@ function SavedNotesSheet({
               </Text>
             </Pressable>
             <Pressable
-              accessibilityLabel="Export saved notes as Markdown"
+              accessibilityLabel="Export saved notes"
               accessibilityRole="button"
               disabled={notes.length === 0 || exportPending}
               onPress={onExportNotes}

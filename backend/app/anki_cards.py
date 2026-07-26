@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 8
+CHUNK_SIZE = 5
 # Caps concurrent OpenAI calls per export the same way MAX_EXTRACTION_WORKERS
 # caps mind-map chapter extraction (backend/app/mindmap/service.py) — enough
 # parallelism to keep latency flat as note count grows, without fanning a large
@@ -100,13 +100,25 @@ def _build_user_input(notes: list[AnkiNoteInput]) -> str:
 
 
 def _generate_chunk(client: OpenAI, model: str, notes: list[AnkiNoteInput]) -> list[AnkiCardResult]:
-    response = client.responses.parse(
-        model=model,
-        instructions=_SYSTEM_PROMPT,
-        input=_build_user_input(notes),
-        text_format=CardBatchResult,
-        max_output_tokens=1500,
-    )
+    request_options: dict[str, object] = {
+        "model": model,
+        "instructions": _SYSTEM_PROMPT,
+        "input": _build_user_input(notes),
+        "text_format": CardBatchResult,
+        "max_output_tokens": 3000,
+        # Deliberately hardcoded to "medium", NOT settings.openai_reasoning_effort
+        # (the app's configured default, currently "minimal") — unlike the other
+        # reasoning-model call sites in openai_assistant.py and retrieval/agent.py.
+        # This is a multi-note creative-generation task, not a simple lookup or
+        # extraction one. Measured directly against the real API on the same
+        # 8-note chunk: no reasoning param at all (prior behavior) produced 8/8
+        # cards; explicit effort="minimal" (the app's default) produced only 1/8.
+        # "minimal" reasoning measurably guts this feature's output. Do not
+        # "fix" this into the settings.openai_reasoning_effort pattern.
+        "reasoning": {"effort": "medium"},
+    }
+
+    response = client.responses.parse(**request_options)
     result: Optional[CardBatchResult] = response.output_parsed
     if result is None:
         return []

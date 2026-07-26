@@ -52,7 +52,7 @@ def check_ai_assist_rate_limit(request: Request) -> None:
         )
 
 
-ANKI_CARDS_RATE_LIMIT_MAX_REQUESTS = 20
+ANKI_CARDS_RATE_LIMIT_MAX_REQUESTS = 5
 ANKI_CARDS_RATE_LIMIT_WINDOW_SECONDS = 600.0  # 10 minutes
 
 _anki_cards_limiter = SlidingWindowRateLimiter(

@@ -25,6 +25,11 @@ export type AnkiNoteInput = {
 
 export type AnkiCardResult = { noteId: string; front: string; back: string };
 
+// Must match backend/app/anki_cards.py's AnkiNoteInput max_length constraints exactly,
+// so an oversized field is truncated client-side instead of 422ing its whole batch.
+const MAX_PASSAGE_OR_ANSWER_LENGTH = 4000;
+const MAX_USER_NOTE_LENGTH = 2000;
+
 // An `ask` note already has a real question and answer — pure formatting, no AI, no
 // network call. Everything else has either no question (quick-actions) or no answer at
 // all (a bare highlight), so it needs AI to turn it into a real quiz question.
@@ -37,10 +42,17 @@ export function toAnkiNoteInput(note: AnkiSourceNote): AnkiNoteInput {
   return {
     noteId: note.id,
     action: note.action as AnkiNoteAction,
-    passage: note.selectedText || undefined,
-    answer: note.body || undefined,
-    userNote: note.userNote,
+    passage: truncate(note.selectedText, MAX_PASSAGE_OR_ANSWER_LENGTH) || undefined,
+    answer: truncate(note.body, MAX_PASSAGE_OR_ANSWER_LENGTH) || undefined,
+    userNote: truncate(note.userNote, MAX_USER_NOTE_LENGTH),
   };
+}
+
+function truncate(value: string | undefined, maxLength: number): string | undefined {
+  if (!value) {
+    return value;
+  }
+  return value.length > maxLength ? value.slice(0, maxLength) : value;
 }
 
 function formatAskNoteAsCard(note: AnkiSourceNote): AnkiCard | null {

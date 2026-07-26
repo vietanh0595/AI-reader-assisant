@@ -2,16 +2,46 @@ import type { AnkiCardResult, AnkiNoteInput } from './ankiExport';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
+// Must match backend/app/anki_cards.py's AnkiCardsRequest.notes max_length. A single
+// request over this cap gets one all-or-nothing 422 for the whole export, which for
+// this app's academic-reader audience (a single highlight is one tap) is a realistic
+// failure mode above 200 eligible notes — so this splits transparently instead.
+const MAX_NOTES_PER_REQUEST = 200;
+
 export async function requestAnkiCards(
   args: { apiBaseUrl: string; notes: AnkiNoteInput[] },
   fetchImpl: FetchLike = fetch,
 ): Promise<AnkiCardResult[]> {
-  const url = `${args.apiBaseUrl}/notes/anki-cards`;
+  const batches = chunk(args.notes, MAX_NOTES_PER_REQUEST);
+  const results: AnkiCardResult[] = [];
+
+  for (const batch of batches) {
+    const cards = await requestAnkiCardsBatch(args.apiBaseUrl, batch, fetchImpl);
+    results.push(...cards);
+  }
+
+  return results;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
+async function requestAnkiCardsBatch(
+  apiBaseUrl: string,
+  notes: AnkiNoteInput[],
+  fetchImpl: FetchLike,
+): Promise<AnkiCardResult[]> {
+  const url = `${apiBaseUrl}/notes/anki-cards`;
 
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ notes: args.notes }),
+    body: JSON.stringify({ notes }),
   });
 
   if (!response.ok) {

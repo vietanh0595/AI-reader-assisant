@@ -16,14 +16,19 @@ _VALID_PAYLOAD = {
 }
 
 
-def test_the_21st_request_within_the_window_is_rate_limited(test_client: TestClient):
+def test_the_6th_request_within_the_window_is_rate_limited(monkeypatch, test_client: TestClient):
+    def fake_generate(client, model, notes):
+        return []
+
+    monkeypatch.setattr("backend.app.routers.notes.generate_anki_cards", fake_generate)
+
     statuses = [
         test_client.post("/notes/anki-cards", json=_VALID_PAYLOAD).status_code
-        for _ in range(21)
+        for _ in range(6)
     ]
 
-    assert 429 not in statuses[:20]
-    assert statuses[20] == 429
+    assert statuses[:5] == [200] * 5
+    assert statuses[5] == 429
 
 
 def test_returns_generated_cards(monkeypatch, test_client: TestClient):

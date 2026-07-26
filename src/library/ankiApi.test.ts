@@ -47,3 +47,53 @@ test('ignores a malformed card entry rather than throwing', async () => {
 
   expect(cards).toEqual([{ noteId: 'n1', front: 'Q', back: 'A' }]);
 });
+
+test('splits more than 200 notes into batches of at most 200', async () => {
+  const notes: AnkiNoteInput[] = Array.from({ length: 250 }, (_, i) => ({
+    noteId: `n${i}`,
+    action: 'highlight',
+    passage: 'A passage.',
+  }));
+
+  const calls: { url: string; body: { notes: AnkiNoteInput[] } }[] = [];
+  const fakeFetch = async (url: string, init?: RequestInit) => {
+    const body = JSON.parse(init?.body as string) as { notes: AnkiNoteInput[] };
+    calls.push({ url, body });
+    return { ok: true, status: 200, json: async () => ({ cards: [] }) };
+  };
+
+  await requestAnkiCards({ apiBaseUrl: 'http://x', notes }, fakeFetch);
+
+  expect(calls).toHaveLength(2);
+  expect(calls[0].body.notes).toHaveLength(200);
+  expect(calls[1].body.notes).toHaveLength(50);
+});
+
+test('concatenates results from multiple batches in order', async () => {
+  const notes: AnkiNoteInput[] = Array.from({ length: 250 }, (_, i) => ({
+    noteId: `n${i}`,
+    action: 'highlight',
+    passage: 'A passage.',
+  }));
+
+  let callCount = 0;
+  const fakeFetch = async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(init?.body as string) as { notes: AnkiNoteInput[] };
+    callCount += 1;
+    const batchIndex = callCount;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        cards: body.notes.map((n) => ({ noteId: n.noteId, front: `Q${batchIndex}`, back: `A${batchIndex}` })),
+      }),
+    };
+  };
+
+  const cards = await requestAnkiCards({ apiBaseUrl: 'http://x', notes }, fakeFetch);
+
+  expect(cards).toHaveLength(250);
+  expect(cards.slice(0, 200).every((c) => c.front === 'Q1')).toBe(true);
+  expect(cards.slice(200).every((c) => c.front === 'Q2')).toBe(true);
+  expect(cards.map((c) => c.noteId)).toEqual(notes.map((n) => n.noteId));
+});

@@ -35,7 +35,7 @@ def test_generates_one_card_per_note_within_a_single_chunk():
     assert {card.note_id for card in cards} == {"n1", "n2"}
 
 
-def test_splits_more_than_eight_notes_into_multiple_chunks():
+def test_splits_more_than_five_notes_into_multiple_chunks():
     notes = [_note(f"n{i}") for i in range(10)]
 
     def fake_parse(**kwargs):
@@ -81,9 +81,9 @@ def test_drops_a_card_whose_note_id_was_never_sent():
 
 
 def test_a_failing_chunk_does_not_prevent_other_chunks_from_returning():
-    # 16 notes split into two equal 8-note chunks, so the assertion below reflects
+    # 10 notes split into two equal 5-note chunks, so the assertion below reflects
     # exactly one whole chunk surviving, not a partial one.
-    notes = [_note(f"n{i}") for i in range(16)]
+    notes = [_note(f"n{i}") for i in range(10)]
 
     def fake_parse(**kwargs):
         if "n0" in kwargs["input"]:
@@ -98,7 +98,7 @@ def test_a_failing_chunk_does_not_prevent_other_chunks_from_returning():
 
     returned_ids = {card.note_id for card in cards}
     assert "n0" not in returned_ids
-    assert len(returned_ids) == 8  # the other chunk's 8 notes all came back
+    assert len(returned_ids) == 5  # the other chunk's 5 notes all came back
 
 
 def test_returns_empty_list_for_empty_notes_without_calling_openai():
