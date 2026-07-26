@@ -65,6 +65,15 @@ import {
   type ExportableNote,
 } from './src/library/savedNoteExport';
 import {
+  buildAnkiFile,
+  buildCardsFromResults,
+  classifyNoteForAnkiExport,
+  toAnkiNoteInput,
+  type AnkiCardResult,
+  type AnkiSourceNote,
+} from './src/library/ankiExport';
+import { requestAnkiCards } from './src/library/ankiApi';
+import {
   ActivityIndicator,
   Alert,
   AppState,
@@ -3793,6 +3802,80 @@ function ReaderApp() {
     }
   }
 
+  async function exportSavedInsightsAsAnki() {
+    if (savedInsights.length === 0 || notesExportPending) {
+      return;
+    }
+
+    setNotesExportPending(true);
+
+    try {
+      const sourceNotes: AnkiSourceNote[] = savedInsights.map((note) => ({
+        id: note.id,
+        action: note.action,
+        question: getSavedNoteHeadline(note),
+        body: note.body,
+        selectedText: note.selectedText,
+        userNote: note.userNote,
+      }));
+
+      const needsAiNotes = sourceNotes.filter((note) => classifyNoteForAnkiExport(note) === 'needsAi');
+      let aiResults: AnkiCardResult[] = [];
+
+      if (needsAiNotes.length > 0) {
+        try {
+          aiResults = await requestAnkiCards({
+            apiBaseUrl,
+            notes: needsAiNotes.map(toAnkiNoteInput),
+          });
+        } catch (error) {
+          // The ask-note cards below have no network dependency and still export —
+          // only the notes that needed AI help are missing from this deck.
+          Alert.alert(
+            'Some notes skipped',
+            'Your Q&A notes will still export, but the rest could not be turned into flashcards right now.',
+          );
+        }
+      }
+
+      const cards = buildCardsFromResults(sourceNotes, aiResults);
+
+      if (cards.length === 0) {
+        Alert.alert('Nothing to export', 'No saved notes could be turned into flashcards.');
+        return;
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+
+      if (!canShare) {
+        throw new Error('Sharing is not available on this device.');
+      }
+
+      const fileUri = `${FileSystem.cacheDirectory}${slugifyForFileName(currentBook.title)}-anki.txt`;
+      await FileSystem.writeAsStringAsync(fileUri, buildAnkiFile(cards));
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/plain',
+        dialogTitle: 'Export to Anki',
+      });
+    } catch (error) {
+      Alert.alert('Export failed', 'Could not export flashcards. Please try again.');
+    } finally {
+      setNotesExportPending(false);
+    }
+  }
+
+  function promptNotesExportFormat() {
+    if (savedInsights.length === 0 || notesExportPending) {
+      return;
+    }
+
+    Alert.alert('Export saved notes', 'Choose a format.', [
+      { text: 'Markdown', onPress: () => void exportSavedInsights() },
+      { text: 'Anki flashcards', onPress: () => void exportSavedInsightsAsAnki() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   function navigateToSource(paragraphId: string, excerpt?: string) {
     setIsThreadCollapsed(true);
     updateReadingLocation(paragraphId);
@@ -4420,7 +4503,7 @@ function ReaderApp() {
                   onCopyNotes={() => void copySavedInsightsToClipboard()}
                   onDeleteNote={deleteSavedInsight}
                   onEditNote={startEditingSavedInsight}
-                  onExportNotes={() => void exportSavedInsights()}
+                  onExportNotes={promptNotesExportFormat}
                   onSearchNotes={setNoteSearchQuery}
                   onSelectNote={(note) => (note.action === 'ask' ? startEditingSavedInsight(note) : openSavedInsight(note))}
                   searchQuery={noteSearchQuery}
