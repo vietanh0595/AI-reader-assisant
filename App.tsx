@@ -1383,13 +1383,16 @@ function formatBookSourceMeta(book: ReaderBook) {
 }
 
 function toExportableNote(note: SavedInsight): ExportableNote {
-  // question/selectedText/body are normalized here, before savedNoteExport's formatters gate
-  // on them, so a whitespace-only field normalizes to '' and is treated as absent (no empty
-  // "Selected: " line). This is an intentional improvement over the pre-refactor behavior,
-  // which gated on the raw field and could emit a label with nothing after it.
+  // question/selectedText are normalized (whitespace collapsed) here, before savedNoteExport's
+  // formatters gate on them, so a whitespace-only field normalizes to '' and is treated as
+  // absent (no empty "Selected: " line). This is an intentional improvement over the
+  // pre-refactor behavior, which gated on the raw field and could emit a label with nothing
+  // after it. `body` only gets trimmed, not whitespace-collapsed: it's the AI's Markdown
+  // answer, and collapsing runs of whitespace would erase the newlines its bullet/numbered
+  // lists depend on (see parseAnswerMarkdown), flattening them into one unreadable line.
   return {
     actionLabel: getInsightActionLabel(note.action),
-    body: normalizeSelectionText(note.body),
+    body: note.body.trim(),
     citations: note.citations?.map((citation) => ({
       // `?? undefined` guards a citation persisted with JSON `null` before saveChatTurn
       // normalized these at the API boundary — see formatCitationLabel.
@@ -4419,7 +4422,7 @@ function ReaderApp() {
                   onEditNote={startEditingSavedInsight}
                   onExportNotes={() => void exportSavedInsights()}
                   onSearchNotes={setNoteSearchQuery}
-                  onSelectNote={openSavedInsight}
+                  onSelectNote={(note) => (note.action === 'ask' ? startEditingSavedInsight(note) : openSavedInsight(note))}
                   searchQuery={noteSearchQuery}
                 />
               ) : null}
@@ -5600,9 +5603,16 @@ function SavedNoteEditorSheet({
               <Text style={styles.noteEditorSelection}>{note.selectedText}</Text>
             ) : null}
             {note.body ? (
-              <View style={styles.noteEditorAnswer}>
+              <Pressable
+                accessibilityLabel="Go to this note's location in the book"
+                accessibilityRole="button"
+                onPress={() =>
+                  onNavigateSource(note.paragraphId, note.selectedText || note.citations?.[0]?.excerpt)
+                }
+                style={styles.noteEditorAnswer}
+              >
                 <AnswerMarkdown text={note.body} />
-              </View>
+              </Pressable>
             ) : null}
             {citationSources.length > 0 ? (
               <View style={styles.noteEditorCitations}>
