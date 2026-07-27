@@ -16,7 +16,7 @@ CHUNK_SIZE = 5
 # export into more simultaneous requests than is reasonable.
 MAX_WORKERS = 8
 
-AnkiNoteAction = Literal["highlight", "explain", "example", "rephrase", "simpler", "summarize"]
+AnkiNoteAction = Literal["ask", "highlight", "explain", "example", "rephrase", "simpler", "summarize"]
 
 
 # --- API request/response schemas ---
@@ -28,9 +28,14 @@ class AnkiNoteInput(BaseModel):
     action: AnkiNoteAction
     passage: Optional[str] = Field(default=None, max_length=4000)
     answer: Optional[str] = Field(default=None, max_length=4000)
+    # Only ever sent for an 'ask' note that has a passage — the reader's own
+    # question, possibly a vague follow-up ("give me an example") that only
+    # made sense with the passage in view. The model decides whether to keep
+    # it or rewrite it into something self-contained; see _SYSTEM_PROMPT.
+    question: Optional[str] = Field(default=None, max_length=1000)
     user_note: Optional[str] = Field(default=None, alias="userNote", max_length=2000)
 
-    @field_validator("passage", "answer", "user_note", mode="before")
+    @field_validator("passage", "answer", "question", "user_note", mode="before")
     @classmethod
     def strip_text_fields(cls, value: object) -> object:
         if isinstance(value, str):
@@ -70,11 +75,19 @@ class CardBatchResult(BaseModel):
 
 _SYSTEM_PROMPT = """
 You turn a reader's saved book notes into Anki flashcards. Each note has a
-note_id and either a passage the reader highlighted, an AI explanation of a
-passage, or both.
+note_id and a passage the reader highlighted, an AI explanation of a
+passage, or both. Some notes also include an existing question the reader
+already asked.
 
 For each note, write a clear front/back flashcard:
-- front: a specific, self-contained quiz question. Never just repeat the passage verbatim.
+- front: if the note includes an existing question, keep it (or reuse it near
+  verbatim) when it is already a clear, self-contained quiz question. Rewrite
+  it instead when it is a vague follow-up that depends on unstated context
+  (e.g. "give me an example", "what does it mean", "explain this", "rephrase
+  it") — a reader reviewing this card later has no access to the original
+  passage, only the front and back, so a vague follow-up means nothing on its
+  own. Ground the rewrite in the passage/answer. If there is no existing
+  question, write one from scratch. Never just repeat the passage verbatim.
 - back: the answer, in your own words, grounded only in the note's content.
 
 If a note's content is too vague, generic, or fragmentary to support a real
@@ -101,6 +114,8 @@ def _build_user_input(notes: list[AnkiNoteInput]) -> str:
             lines.append(f"passage: {note.passage}")
         if note.answer:
             lines.append(f"answer: {note.answer}")
+        if note.question:
+            lines.append(f"existing question: {note.question}")
         if note.user_note:
             lines.append(f"reader's own note: {note.user_note}")
         lines.append("")

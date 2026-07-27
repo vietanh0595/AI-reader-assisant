@@ -164,3 +164,19 @@ def test_build_user_input_never_leaks_the_real_note_id():
     assert "insight:xyz789" not in prompt
     assert "note_id: 0" in prompt
     assert "note_id: 1" in prompt
+
+
+def test_build_user_input_includes_the_existing_question_when_present():
+    # An 'ask' note with a selection carries its original (possibly vague)
+    # question as context, so the model can decide whether to keep it or
+    # rewrite it into something self-contained.
+    notes = [_note("chat:abc", action="ask", answer="An existing answer.", question="give me an example")]
+
+    prompt = _build_user_input(notes)
+
+    assert "existing question: give me an example" in prompt
+
+
+def test_ask_action_is_accepted():
+    note = _note("chat:abc", action="ask", answer="An existing answer.", question="what does it mean")
+    assert note.action == "ask"

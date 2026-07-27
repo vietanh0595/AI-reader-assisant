@@ -17,14 +17,20 @@ const note = (over: Partial<AnkiSourceNote> = {}): AnkiSourceNote => ({
 });
 
 describe('classifyNoteForAnkiExport', () => {
-  test('an ask note is pure formatting', () => {
-    expect(classifyNoteForAnkiExport(note({ action: 'ask' }))).toBe('formatted');
+  test('an ask note with no selection is pure formatting', () => {
+    expect(classifyNoteForAnkiExport(note({ action: 'ask', selectedText: '' }))).toBe('formatted');
+  });
+
+  test('an ask note with a real selection needs the AI to judge the front', () => {
+    expect(classifyNoteForAnkiExport(note({ action: 'ask', selectedText: 'A passage.' }))).toBe(
+      'needsAiFront',
+    );
   });
 
   test.each(['highlight', 'explain', 'example', 'rephrase', 'simpler', 'summarize'] as const)(
-    '%s notes need AI',
+    '%s notes need full AI reshaping',
     (action) => {
-      expect(classifyNoteForAnkiExport(note({ action }))).toBe('needsAi');
+      expect(classifyNoteForAnkiExport(note({ action }))).toBe('needsAiFull');
     },
   );
 });
@@ -39,8 +45,23 @@ describe('toAnkiNoteInput', () => {
       action: 'explain',
       passage: 'A passage.',
       answer: 'An explanation.',
+      question: undefined,
       userNote: undefined,
     });
+  });
+
+  test('includes the question for an ask note with a selection', () => {
+    const input = toAnkiNoteInput(
+      note({ id: 'n9', action: 'ask', selectedText: 'A passage.', body: 'An answer.', question: 'give me an example' }),
+    );
+    expect(input.question).toBe('give me an example');
+  });
+
+  test('omits the question for a non-ask note even when one is set', () => {
+    const input = toAnkiNoteInput(
+      note({ id: 'n10', action: 'explain', selectedText: 'A passage.', body: 'An answer.', question: 'Explain this' }),
+    );
+    expect(input.question).toBeUndefined();
   });
 
   test('omits empty passage and answer rather than sending empty strings', () => {
@@ -134,6 +155,30 @@ describe('buildCardsFromResults', () => {
 
   test('omits a needsAi note the AI result set has no entry for', () => {
     const notes = [note({ id: 'n2', action: 'highlight' })];
+    expect(buildCardsFromResults(notes, [])).toEqual([]);
+  });
+
+  test('a needsAiFront note uses the AI front but keeps the original answer as back', () => {
+    const notes = [
+      note({ id: 'n2', action: 'ask', selectedText: 'A passage.', question: 'give me an example', body: 'The original answer.' }),
+    ];
+    const cards = buildCardsFromResults(notes, [
+      { noteId: 'n2', front: 'What is an example of X?', back: 'A rewritten answer the AI should not be trusted for.' },
+    ]);
+    expect(cards).toEqual([{ front: 'What is an example of X?', back: 'The original answer.' }]);
+  });
+
+  test('a needsAiFront note falls back to the original question when the AI omits it', () => {
+    const notes = [
+      note({ id: 'n2', action: 'ask', selectedText: 'A passage.', question: 'give me an example', body: 'The original answer.' }),
+    ];
+    expect(buildCardsFromResults(notes, [])).toEqual([{ front: 'give me an example', back: 'The original answer.' }]);
+  });
+
+  test('a needsAiFront note with no question and no AI response is skipped', () => {
+    const notes = [
+      note({ id: 'n2', action: 'ask', selectedText: 'A passage.', question: '', body: 'The original answer.' }),
+    ];
     expect(buildCardsFromResults(notes, [])).toEqual([]);
   });
 

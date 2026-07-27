@@ -3819,7 +3819,7 @@ function ReaderApp() {
         userNote: note.userNote,
       }));
 
-      const needsAiNotes = sourceNotes.filter((note) => classifyNoteForAnkiExport(note) === 'needsAi');
+      const needsAiNotes = sourceNotes.filter((note) => classifyNoteForAnkiExport(note) !== 'formatted');
       let aiResults: AnkiCardResult[] = [];
 
       if (needsAiNotes.length > 0) {
