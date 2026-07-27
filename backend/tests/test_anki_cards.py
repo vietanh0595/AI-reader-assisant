@@ -6,20 +6,38 @@ from backend.app.anki_cards import (
     AnkiNoteInput,
     CardBatchResult,
     GeneratedCard,
+    _build_user_input,
     generate_anki_cards,
 )
 
 
 def _note(note_id: str, **overrides) -> AnkiNoteInput:
-    defaults = dict(note_id=note_id, action="highlight", passage="A passage.", answer=None, user_note=None)
+    # Passage text is unique per note (embeds note_id) so tests can identify a
+    # note's presence in a given prompt input by its passage — the real
+    # note_id itself is never rendered in the prompt (see _build_user_input),
+    # only a positional index, so it can't be grepped for directly anymore.
+    defaults = dict(
+        note_id=note_id,
+        action="highlight",
+        passage=f"A passage about {note_id}.",
+        answer=None,
+        user_note=None,
+    )
     defaults.update(overrides)
     return AnkiNoteInput(**defaults)
 
 
 def _response_for(notes: list[AnkiNoteInput]) -> MagicMock:
+    # The model is given positional ids ("0", "1", ...) for a chunk, not the
+    # real note_id (see _build_user_input) — mirror that here by returning
+    # cards keyed by position within `notes`, the same list _generate_chunk
+    # uses to build its position -> real-note_id mapping.
     response = MagicMock()
     response.output_parsed = CardBatchResult(
-        cards=[GeneratedCard(note_id=note.note_id, front=f"Q for {note.note_id}", back=f"A for {note.note_id}") for note in notes]
+        cards=[
+            GeneratedCard(note_id=str(index), front=f"Q for {note.note_id}", back=f"A for {note.note_id}")
+            for index, note in enumerate(notes)
+        ]
     )
     return response
 
@@ -39,9 +57,9 @@ def test_splits_more_than_five_notes_into_multiple_chunks():
     notes = [_note(f"n{i}") for i in range(10)]
 
     def fake_parse(**kwargs):
-        # Identify which notes are in this call's input so chunking is verified
-        # regardless of thread execution order.
-        chunk_notes = [note for note in notes if note.note_id in kwargs["input"]]
+        # Identify which notes are in this call's input via their unique
+        # passage text, since the real note_id is no longer in the prompt.
+        chunk_notes = [note for note in notes if note.passage in kwargs["input"]]
         return _response_for(chunk_notes)
 
     client = MagicMock()
@@ -57,8 +75,9 @@ def test_omits_a_note_the_model_left_out_of_its_response():
     notes = [_note("n1"), _note("n2")]
     client = MagicMock()
     response = MagicMock()
-    # The model only returned a card for n1 — n2 was too vague to quiz on.
-    response.output_parsed = CardBatchResult(cards=[GeneratedCard(note_id="n1", front="Q", back="A")])
+    # The model only returned a card for the note at position 0 (n1) — n2 was
+    # too vague to quiz on.
+    response.output_parsed = CardBatchResult(cards=[GeneratedCard(note_id="0", front="Q", back="A")])
     client.responses.parse.return_value = response
 
     cards = generate_anki_cards(client, "gpt-5-mini", notes)
@@ -71,7 +90,10 @@ def test_drops_a_card_whose_note_id_was_never_sent():
     client = MagicMock()
     response = MagicMock()
     response.output_parsed = CardBatchResult(
-        cards=[GeneratedCard(note_id="n1", front="Q", back="A"), GeneratedCard(note_id="hallucinated", front="Q2", back="A2")]
+        cards=[
+            GeneratedCard(note_id="0", front="Q", back="A"),
+            GeneratedCard(note_id="hallucinated", front="Q2", back="A2"),
+        ]
     )
     client.responses.parse.return_value = response
 
@@ -86,9 +108,9 @@ def test_a_failing_chunk_does_not_prevent_other_chunks_from_returning():
     notes = [_note(f"n{i}") for i in range(10)]
 
     def fake_parse(**kwargs):
-        if "n0" in kwargs["input"]:
+        if notes[0].passage in kwargs["input"]:
             raise RuntimeError("upstream failure")
-        chunk_notes = [note for note in notes if note.note_id in kwargs["input"]]
+        chunk_notes = [note for note in notes if note.passage in kwargs["input"]]
         return _response_for(chunk_notes)
 
     client = MagicMock()
@@ -108,3 +130,37 @@ def test_returns_empty_list_for_empty_notes_without_calling_openai():
 
     assert cards == []
     assert client.responses.parse.call_count == 0
+
+
+def test_note_id_with_a_colon_round_trips_correctly():
+    # Regression test for the real bug: real note ids look like
+    # "highlight:abc123" or "insight:xyz789" (colon-prefixed, per
+    # createHighlightId/createSavedInsightId in App.tsx). A real model call
+    # was observed dropping everything before the colon when asked to echo an
+    # id like that back verbatim, corrupting the round trip and silently
+    # discarding an otherwise-good card. The positional-id indirection means
+    # the model never sees or echoes the real id, so this must survive
+    # regardless of what characters it contains.
+    notes = [_note("highlight:abc123")]
+    client = MagicMock()
+    client.responses.parse.return_value = _response_for(notes)
+
+    cards = generate_anki_cards(client, "gpt-5-mini", notes)
+
+    assert [card.note_id for card in cards] == ["highlight:abc123"]
+
+
+def test_build_user_input_never_leaks_the_real_note_id():
+    # Passage text overridden here (unlike the shared `_note` default) so it
+    # doesn't coincidentally contain the id substring itself.
+    notes = [
+        _note("highlight:abc123", passage="Some passage text."),
+        _note("insight:xyz789", passage="Some other passage text."),
+    ]
+
+    prompt = _build_user_input(notes)
+
+    assert "highlight:abc123" not in prompt
+    assert "insight:xyz789" not in prompt
+    assert "note_id: 0" in prompt
+    assert "note_id: 1" in prompt

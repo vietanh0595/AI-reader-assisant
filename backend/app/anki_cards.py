@@ -85,9 +85,17 @@ into a card.
 
 
 def _build_user_input(notes: list[AnkiNoteInput]) -> str:
+    # Real note ids look like "highlight:abc123" or "insight:xyz789" (colon-
+    # prefixed, per createHighlightId/createSavedInsightId in App.tsx). A
+    # structured-output model was observed dropping everything before the
+    # colon when asked to echo an id like that back verbatim ("highlight:
+    # abc123" -> "abc123"), silently corrupting the round trip and discarding
+    # an otherwise-good card. The model never sees the real id at all here —
+    # only its position in this chunk — so it has nothing punctuation-bearing
+    # to mangle. _generate_chunk maps the position back to the real id.
     lines: list[str] = []
-    for note in notes:
-        lines.append(f"note_id: {note.note_id}")
+    for index, note in enumerate(notes):
+        lines.append(f"note_id: {index}")
         lines.append(f"action: {note.action}")
         if note.passage:
             lines.append(f"passage: {note.passage}")
@@ -123,11 +131,14 @@ def _generate_chunk(client: OpenAI, model: str, notes: list[AnkiNoteInput]) -> l
     if result is None:
         return []
 
-    valid_ids = {note.note_id for note in notes}
+    # The model's note_id is the position from _build_user_input, not the
+    # real id — map it back, and drop anything that isn't a position we
+    # actually sent (a hallucinated id, same defense as before).
+    real_id_by_position = {str(index): note.note_id for index, note in enumerate(notes)}
     return [
-        AnkiCardResult(note_id=card.note_id, front=card.front, back=card.back)
+        AnkiCardResult(note_id=real_id_by_position[card.note_id], front=card.front, back=card.back)
         for card in result.cards
-        if card.note_id in valid_ids
+        if card.note_id in real_id_by_position
     ]
 
 
