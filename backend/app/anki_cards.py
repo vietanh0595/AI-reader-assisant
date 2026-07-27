@@ -86,8 +86,15 @@ For each note, write a clear front/back flashcard:
   (e.g. "give me an example", "what does it mean", "explain this", "rephrase
   it") — a reader reviewing this card later has no access to the original
   passage, only the front and back, so a vague follow-up means nothing on its
-  own. Ground the rewrite in the passage/answer. If there is no existing
-  question, write one from scratch. Never just repeat the passage verbatim.
+  own. Ground the rewrite in the general concept the passage/answer is about,
+  not in its specific numbers or scenario — the front must not give away or
+  restate the answer's concrete details (a specific dollar amount, date, name,
+  percentage, etc.), or answering it becomes trivial recomputation instead of
+  recall. For "give me an example" specifically, ask for an example of the
+  underlying concept in general terms (e.g. "What's an example of how a
+  corporate bond works?"), and let the back be where the concrete example
+  lives. If there is no existing question, write one from scratch. Never just
+  repeat the passage verbatim.
 - back: the answer, in your own words, grounded only in the note's content.
 
 If a note's content is too vague, generic, or fragmentary to support a real
