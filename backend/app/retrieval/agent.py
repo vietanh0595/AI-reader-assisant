@@ -38,8 +38,9 @@ Tools:
   questions whose answer is not on the current page. {STANDALONE_QUERY_GUIDANCE}
 
 When you have enough evidence, answer. Set supported=false with an empty body if the
-evidence does not support an answer. Cite only the source IDs present in search results.
-Cite at most 3. Keep the body under 1800 characters.
+evidence does not support an answer. Every tool result is labeled with a bracketed source
+ID, e.g. "[s0-2] ..." or "[ctx0] ..." — cite only IDs that appeared in a tool result this
+turn. Cite at most 3. Keep the body under 1800 characters.
 
 Formatting: write the body in clean Markdown, restricted to:
 - Short paragraphs (1-3 sentences).
@@ -194,8 +195,17 @@ class BookAgent:
                  max_reading_order, round_index, evidence_by_id) -> str:
         try:
             if call.name == "read_current_context":
-                return self._retrieval.read_current_context(
+                item = self._retrieval.read_current_context(
                     user_id=user_id, book_id=book_id, current_reading_order=current_reading_order)
+                if item is None:
+                    return "No surrounding text is available at the current position."
+                # Register it as citable evidence the same way search_book results are —
+                # otherwise an answer grounded in the current page can never have a valid
+                # citation_id, and the sources-empty check in _finalize forces every such
+                # answer to "insufficient evidence" regardless of how good it is.
+                sid = f"ctx{round_index}"
+                evidence_by_id[sid] = self._rekey(item, sid)
+                return f"[{sid}] {item.raw_text}"
             if call.name == "search_book":
                 try:
                     args = json.loads(call.arguments or "{}")

@@ -56,13 +56,17 @@ class FakeRetrieval:
     def __init__(self):
         self.retrieve_calls = []
         self.evidence = EvidenceSet(items=[_evidence("s0-0")], supported=True)
+        # None means "no surrounding text available"; tests that want a real
+        # read_current_context result set this to an EvidenceItem (source_id is
+        # ignored/overwritten by the agent, same as the real service's contract).
+        self.current_context_item = None
 
     def retrieve(self, **kwargs):
         self.retrieve_calls.append(kwargs)
         return self.evidence
 
     def read_current_context(self, **kwargs):
-        return "current page text"
+        return self.current_context_item
 
 
 def test_agent_runs_tool_then_answers_with_validated_citation():
@@ -90,6 +94,60 @@ def test_agent_runs_tool_then_answers_with_validated_citation():
     assert answer.body == "Start early."
     assert [s.id for s in answer.sources] == ["s0-0"]
     assert retrieval.retrieve_calls[0]["include_whole_book"] is True
+
+
+def test_agent_can_cite_the_current_page_as_evidence():
+    # Regression test: a question answered from read_current_context (e.g. "what does
+    # it mean" about the passage the reader is looking at right now) used to always be
+    # forced to "insufficient evidence", because that tool's output was never registered
+    # as citable evidence — only search_book results were. See _execute's read_current_context
+    # branch.
+    client = FakeOpenAI([
+        FakeResponse(
+            output=[FakeFunctionCall(name="read_current_context", arguments="{}", call_id="c1")],
+            output_parsed=None,
+        ),
+        FakeResponse(
+            output=[],
+            output_parsed=ModelBookAnswer(
+                supported=True, eyebrow="Explanation", body="It means X.", citation_ids=["ctx0"],
+            ),
+        ),
+    ])
+    retrieval = FakeRetrieval()
+    retrieval.current_context_item = _evidence("placeholder-id", text="the current page's text")
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=retrieval)
+
+    answer = agent.answer(
+        user_id=USER_ID, book_id=BOOK_ID, question="what does it mean",
+        history=[], selected_text="the current page's text",
+        current_reading_order=10, include_whole_book=False,
+    )
+
+    assert answer.supported is True
+    assert answer.body == "It means X."
+    assert [s.id for s in answer.sources] == ["ctx0"]
+
+
+def test_agent_handles_no_current_context_available():
+    client = FakeOpenAI([
+        FakeResponse(
+            output=[FakeFunctionCall(name="read_current_context", arguments="{}", call_id="c1")],
+            output_parsed=None,
+        ),
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            supported=False, eyebrow="Insufficient evidence", body="", citation_ids=[])),
+    ])
+    retrieval = FakeRetrieval()
+    retrieval.current_context_item = None
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=retrieval)
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="what's here?", history=[],
+                          selected_text=None, current_reading_order=10, include_whole_book=False)
+
+    assert answer.supported is False
+    tool_output = client.calls[1]["input"][-1]["output"]
+    assert tool_output == "No surrounding text is available at the current position."
 
 
 def test_agent_applies_spoiler_cap_when_book_so_far():

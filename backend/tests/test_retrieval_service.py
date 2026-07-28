@@ -200,5 +200,15 @@ def test_read_current_context_formats_window(make_service):
         ContextBlock("p-9", 9, "Ninth paragraph.", "Chapter 1"),
         ContextBlock("p-10", 10, "Tenth paragraph.", "Chapter 1"),
     ]
-    text_out = service.read_current_context(user_id=USER_ID, book_id=BOOK_ID, current_reading_order=10)
-    assert text_out == "Ninth paragraph.\n\nTenth paragraph."
+    item = service.read_current_context(user_id=USER_ID, book_id=BOOK_ID, current_reading_order=10)
+    assert item.raw_text == "Ninth paragraph.\n\nTenth paragraph."
+    assert item.paragraph_ids == ["p-9", "p-10"]
+    assert item.chapter_title == "Chapter 1"
+    assert item.start_reading_order == 9
+    assert item.end_reading_order == 10
+
+
+def test_read_current_context_returns_none_when_no_blocks(make_service):
+    service, fake_repo_inst = make_service()
+    fake_repo_inst.context_blocks = []
+    assert service.read_current_context(user_id=USER_ID, book_id=BOOK_ID, current_reading_order=10) is None

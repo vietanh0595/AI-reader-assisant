@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .models import EvidenceItem, EvidenceSet
 from .repository import RetrievalRepository
@@ -128,7 +128,7 @@ class RetrievalService:
         book_id: UUID,
         current_reading_order: int,
         radius: int = 2,
-    ) -> str:
+    ) -> Optional[EvidenceItem]:
         blocks = self._repo.read_context_window(
             user_id=user_id,
             book_id=book_id,
@@ -136,5 +136,22 @@ class RetrievalService:
             radius=radius,
         )
         if not blocks:
-            return "No surrounding text is available at the current position."
-        return "\n\n".join(b.text for b in blocks)
+            return None
+        # source_id is left blank — the caller (BookAgent) assigns a per-round id and
+        # rekeys it the same way it rekeys search_book results, so the model can cite
+        # the current page's text just like any other retrieved evidence.
+        return EvidenceItem(
+            source_id="",
+            chunk_id=uuid4(),
+            chunk_order=0,
+            raw_text="\n\n".join(b.text for b in blocks),
+            start_reading_order=blocks[0].reading_order,
+            end_reading_order=blocks[-1].reading_order,
+            chapter_id=None,
+            chapter_title=blocks[0].chapter_title,
+            page_start=None,
+            page_end=None,
+            paragraph_ids=[b.paragraph_id for b in blocks],
+            source_refs=[],
+            rrf_score=0.0,
+        )
