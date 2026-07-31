@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+from collections.abc import Generator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -9,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_user
 from ..db.models import User
-from ..db.session import session_dependency
 from ..indexing.schemas import (
     BatchUploadResponse,
     CreateIndexRequest,
@@ -22,8 +22,15 @@ from ..indexing.service import MAX_DECOMPRESSED_BYTES, IndexingService
 router = APIRouter(prefix="/library/books", tags=["indexing"])
 
 
-def get_session(request: Request) -> Session:
-    return next(session_dependency(request.app.state.session_factory)())
+def get_session(request: Request) -> Generator[Session, None, None]:
+    # Must be a generator (yield, not return) so FastAPI runs the code after yield
+    # as cleanup once the request finishes - that's what closes the `with` block
+    # below and returns the connection to the pool. A version of this that pulled
+    # the session out with next(...) and returned it as a plain value hid the
+    # generator from FastAPI entirely, so the connection was never returned -
+    # every request through this router leaked one permanently.
+    with request.app.state.session_factory() as session:
+        yield session
 
 
 def get_service(request: Request, session: Session = Depends(get_session)) -> IndexingService:
