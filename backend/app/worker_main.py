@@ -19,7 +19,10 @@ logging.basicConfig(
 def build_worker(settings) -> IndexWorker:
     from openai import OpenAI
 
-    engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=5)
+    # Modest pool: this engine shares a connection budget with the web service's own
+    # engine (db/session.py) against one Postgres instance. The worker processes one
+    # job at a time plus a heartbeat thread, so it never needs more than a couple.
+    engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=2, max_overflow=1)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
     openai_client = OpenAI(api_key=settings.require_openai_api_key())

@@ -12,7 +12,10 @@ SessionDependency = Callable[[], Generator[Session, None, None]]
 
 
 def create_session_factory(settings: Settings) -> sessionmaker[Session]:
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    # Explicit, modest pool size: this engine shares a connection budget with the
+    # worker's own engine (worker_main.py) against one Postgres instance, so we don't
+    # want SQLAlchemy's defaults (5 + 10 overflow = 15) unconstrained on both sides.
+    engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=3, max_overflow=2)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
