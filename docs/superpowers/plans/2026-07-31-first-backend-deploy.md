@@ -200,3 +200,33 @@ through. A few likely failure points, given what's actually in the code:
 - **Worker never logs "Claimed job":** confirm the book import actually created an
   `IndexJob` row (Supabase Table Editor → `index_jobs`) — if no row exists, the issue is
   upstream in the web service's upload path, not the worker.
+
+## Before real launch: raise the DB connection pool size
+
+**Do not ship this to real multi-user traffic without revisiting this.** Found live
+during this deploy, worth tracking so it isn't forgotten:
+
+`create_session_factory` (`backend/app/db/session.py`) creates its engine — and its
+connection pool — exactly once, when the FastAPI app boots (`main.py`'s `create_app`).
+That single pool is shared by **every request from every user**, not per-user, not
+per-request. Right now it's sized at `pool_size=3, max_overflow=2` (5 connections
+total) — deliberately conservative, picked to share a small connection budget with the
+worker's own pool against one Supabase instance, before any real usage data existed.
+
+Already proven too small once this session: importing a single book (which fires many
+sequential `upload_batch` calls plus status polls) exhausted it and threw
+`sqlalchemy.exc.TimeoutError: QueuePool limit of size 3 overflow 2 reached` — that
+specific instance was actually a connection-leak bug in `routers/indexing.py` (fixed,
+see commit `ae0001c`), but it demonstrated the ceiling is real and easy to hit. Mind map
+generation alone can open up to `MAX_EXTRACTION_WORKERS = 8` concurrent DB-touching
+threads per run.
+
+With multiple real concurrent users, 5 total connections for the whole app will not be
+enough — one user running a mind map generation could stall every other user's request
+for up to the 30-second pool timeout.
+
+**What to do before launch:** re-check Supabase's actual max client connections
+(confirmed 200 on the free tier during this deploy — see spec's connection-pooling
+section) and raise `pool_size`/`max_overflow` on `ai-reader-api`'s engine well above 5,
+leaving headroom for the worker's own pool and Supabase's own overhead. There's no
+reason to stay this conservative once this is real, not hypothetical, traffic.
