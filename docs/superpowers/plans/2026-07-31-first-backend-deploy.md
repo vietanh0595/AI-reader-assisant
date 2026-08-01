@@ -200,6 +200,14 @@ through. A few likely failure points, given what's actually in the code:
 - **Worker never logs "Claimed job":** confirm the book import actually created an
   `IndexJob` row (Supabase Table Editor → `index_jobs`) — if no row exists, the issue is
   upstream in the web service's upload path, not the worker.
+- **`psycopg.errors.DuplicatePreparedStatement: prepared statement "_pg3_0" already
+  exists`:** not a bug in this codebase — a documented incompatibility between
+  psycopg3's automatic server-side prepared statements and Supabase's Transaction-mode
+  pooler (a prepared statement lives on the physical Postgres connection it was created
+  on, and the pooler can route your next transaction to a different one). Fixed already
+  (commit `a70e1e7`) by setting `connect_args={"prepare_threshold": None}` on both
+  engines — if you see this again after that commit is deployed, something's wrong with
+  the deploy itself, not this same root cause recurring.
 
 ## Before real launch: raise the DB connection pool size
 
