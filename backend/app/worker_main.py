@@ -22,7 +22,19 @@ def build_worker(settings) -> IndexWorker:
     # Modest pool: this engine shares a connection budget with the web service's own
     # engine (db/session.py) against one Postgres instance. The worker processes one
     # job at a time plus a heartbeat thread, so it never needs more than a couple.
-    engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=2, max_overflow=1)
+    #
+    # prepare_threshold=None disables psycopg3's automatic server-side prepared
+    # statements - required behind Supabase's Transaction-mode pooler, which can route
+    # each transaction to a different physical Postgres connection. See db/session.py
+    # for the full explanation; this worker hits it hardest since run_forever() repeats
+    # the identical claim() query every couple of seconds, forever.
+    engine = create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=2,
+        max_overflow=1,
+        connect_args={"prepare_threshold": None},
+    )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
     openai_client = OpenAI(api_key=settings.require_openai_api_key())
