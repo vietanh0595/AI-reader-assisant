@@ -3357,6 +3357,11 @@ function ReaderApp() {
   }
 
   function saveChatTurn(turn: ConversationTurn) {
+    // The follow-up input's keyboard has no reason to stay open once the reader has
+    // moved on to saving a note - left alone, it stays up and covers the bottom of the
+    // Edit note sheet this function is about to open.
+    Keyboard.dismiss();
+
     const insightId = createChatInsightId(turn);
 
     if (savedInsights.some((note) => note.id === insightId)) {
