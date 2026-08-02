@@ -2612,6 +2612,12 @@ function ReaderApp() {
   const [editingNote, setEditingNote] = useState<SavedInsight | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [editingNoteQuestion, setEditingNoteQuestion] = useState('');
+  // The editor is reused for two different moments: right after a note is first saved
+  // (it's already persisted - this sheet is just an optional "add anything?" step) and
+  // reopening an existing note later to genuinely edit it. Only the latter has anything
+  // to cancel, so the sheet's dismiss button needs to say something different depending
+  // on which one this is - see SavedNoteEditorSheet's closeLabel.
+  const [editingNoteJustCreated, setEditingNoteJustCreated] = useState(false);
   const [notesCopyFeedback, setNotesCopyFeedback] = useState(false);
   const [notesExportPending, setNotesExportPending] = useState(false);
   // Mind map state
@@ -3415,7 +3421,7 @@ function ReaderApp() {
     // Open the editor on the new note so the reader can correct a composed question and
     // add their own thought while it's fresh. `editingNote` renders last in the sheet
     // stack, so it lands above the open thread; closing it returns to the conversation.
-    startEditingSavedInsight(note);
+    startEditingSavedInsight(note, { justCreated: true });
   }
 
   async function importBook() {
@@ -3728,16 +3734,18 @@ function ReaderApp() {
     }));
   }
 
-  function startEditingSavedInsight(note: SavedInsight) {
+  function startEditingSavedInsight(note: SavedInsight, options?: { justCreated?: boolean }) {
     setEditingNote(note);
     setEditingNoteText(note.userNote ?? '');
     setEditingNoteQuestion(getEditableSavedNoteQuestion(note) ?? '');
+    setEditingNoteJustCreated(options?.justCreated ?? false);
   }
 
   function cancelEditingSavedInsight() {
     setEditingNote(null);
     setEditingNoteText('');
     setEditingNoteQuestion('');
+    setEditingNoteJustCreated(false);
   }
 
   function saveEditedSavedInsight() {
@@ -4517,6 +4525,7 @@ function ReaderApp() {
 
               {editingNote ? (
                 <SavedNoteEditorSheet
+                  closeLabel={editingNoteJustCreated ? 'Done' : 'Cancel'}
                   note={editingNote}
                   noteQuestion={editingNoteQuestion}
                   noteText={editingNoteText}
@@ -5617,6 +5626,7 @@ function doesSavedNoteMatchQuery(note: SavedInsight, normalizedQuery: string) {
 }
 
 function SavedNoteEditorSheet({
+  closeLabel,
   note,
   noteQuestion,
   noteText,
@@ -5626,6 +5636,7 @@ function SavedNoteEditorSheet({
   onNavigateSource,
   onSave,
 }: {
+  closeLabel: string;
   note: SavedInsight;
   noteQuestion: string;
   noteText: string;
@@ -5721,7 +5732,7 @@ function SavedNoteEditorSheet({
         <View style={styles.sheetActions}>
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.sheetButton}>
             <X color={colors.ink} size={16} strokeWidth={2} />
-            <Text style={styles.sheetButtonText}>Cancel</Text>
+            <Text style={styles.sheetButtonText}>{closeLabel}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
