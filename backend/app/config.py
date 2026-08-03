@@ -22,6 +22,12 @@ DEFAULT_RAG_MIN_VECTOR_SIMILARITY = 0.20
 DEFAULT_RAG_CONTEXT_MAX_CHARS = 18_000
 DEFAULT_MINDMAP_EXTRACTION_MODEL = "gpt-4o-mini"
 DEFAULT_MINDMAP_CONSOLIDATION_MODEL = "gpt-4o"
+# Matches the web service's current pool (backend/app/db/session.py); the worker
+# (worker_main.py) currently wants a smaller pool (2/1) and can override that via its
+# own DB_POOL_SIZE/DB_MAX_OVERFLOW env vars on its Render service - these are just the
+# fallback when neither is set.
+DEFAULT_DB_POOL_SIZE = 3
+DEFAULT_DB_MAX_OVERFLOW = 2
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_DIR.parent
 
@@ -53,6 +59,8 @@ class Settings:
     rag_context_max_chars: int
     mindmap_extraction_model: str
     mindmap_consolidation_model: str
+    db_pool_size: int
+    db_max_overflow: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -77,6 +85,8 @@ class Settings:
             rag_context_max_chars=int(os.getenv("RAG_CONTEXT_MAX_CHARS", str(DEFAULT_RAG_CONTEXT_MAX_CHARS))),
             mindmap_extraction_model=os.getenv("MINDMAP_EXTRACTION_MODEL", DEFAULT_MINDMAP_EXTRACTION_MODEL).strip() or DEFAULT_MINDMAP_EXTRACTION_MODEL,
             mindmap_consolidation_model=os.getenv("MINDMAP_CONSOLIDATION_MODEL", DEFAULT_MINDMAP_CONSOLIDATION_MODEL).strip() or DEFAULT_MINDMAP_CONSOLIDATION_MODEL,
+            db_pool_size=int(os.getenv("DB_POOL_SIZE", str(DEFAULT_DB_POOL_SIZE))),
+            db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", str(DEFAULT_DB_MAX_OVERFLOW))),
         )
 
     def require_openai_api_key(self) -> str:

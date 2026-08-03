@@ -91,6 +91,8 @@ def app_settings() -> Settings:
         rag_context_max_chars=18_000,
         mindmap_extraction_model="gpt-4o-mini",
         mindmap_consolidation_model="gpt-4o",
+        db_pool_size=3,
+        db_max_overflow=2,
     )
 
 

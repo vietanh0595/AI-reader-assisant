@@ -41,3 +41,27 @@ def test_require_oidc_settings_returns_configured_values(monkeypatch):
     assert oidc_settings.issuer_url == "https://login.example.com/"
     assert oidc_settings.audience == "ai-reader-api"
     assert oidc_settings.jwks_url == "https://login.example.com/.well-known/jwks.json"
+
+
+def test_db_pool_settings_default_when_unset(monkeypatch):
+    monkeypatch.setattr("backend.app.config.load_project_env_files", lambda: None)
+    monkeypatch.delenv("DB_POOL_SIZE", raising=False)
+    monkeypatch.delenv("DB_MAX_OVERFLOW", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.db_pool_size == 3
+    assert settings.db_max_overflow == 2
+
+
+def test_db_pool_settings_read_from_env(monkeypatch):
+    # The whole point of this being env-var driven: raisable from Render's dashboard
+    # without a code redeploy, once real multi-user traffic needs more than the default.
+    monkeypatch.setattr("backend.app.config.load_project_env_files", lambda: None)
+    monkeypatch.setenv("DB_POOL_SIZE", "10")
+    monkeypatch.setenv("DB_MAX_OVERFLOW", "5")
+
+    settings = Settings.from_env()
+
+    assert settings.db_pool_size == 10
+    assert settings.db_max_overflow == 5

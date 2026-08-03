@@ -12,9 +12,11 @@ SessionDependency = Callable[[], Generator[Session, None, None]]
 
 
 def create_session_factory(settings: Settings) -> sessionmaker[Session]:
-    # Explicit, modest pool size: this engine shares a connection budget with the
-    # worker's own engine (worker_main.py) against one Postgres instance, so we don't
-    # want SQLAlchemy's defaults (5 + 10 overflow = 15) unconstrained on both sides.
+    # Pool size is env-var driven (DB_POOL_SIZE/DB_MAX_OVERFLOW, see config.py) rather
+    # than hardcoded, so it's raisable from Render's dashboard without a redeploy - this
+    # engine shares a connection budget with the worker's own engine (worker_main.py)
+    # against one Postgres instance, so we don't want SQLAlchemy's defaults (5 + 10
+    # overflow = 15) unconstrained on both sides.
     #
     # prepare_threshold=None disables psycopg3's automatic server-side prepared
     # statements. We connect through Supabase's Transaction-mode pooler (Supavisor),
@@ -27,8 +29,8 @@ def create_session_factory(settings: Settings) -> sessionmaker[Session]:
     engine = create_engine(
         settings.database_url,
         pool_pre_ping=True,
-        pool_size=3,
-        max_overflow=2,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
         connect_args={"prepare_threshold": None},
     )
     return sessionmaker(bind=engine, expire_on_commit=False)
