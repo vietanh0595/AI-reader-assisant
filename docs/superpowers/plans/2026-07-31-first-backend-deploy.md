@@ -200,6 +200,19 @@ through. A few likely failure points, given what's actually in the code:
 - **Worker never logs "Claimed job":** confirm the book import actually created an
   `IndexJob` row (Supabase Table Editor → `index_jobs`) — if no row exists, the issue is
   upstream in the web service's upload path, not the worker.
+- **`ai-reader-api` shows a clean shutdown sequence in the logs (`Shutting down` →
+  `Waiting for application shutdown` → `Application shutdown complete` → `Finished
+  server process`) with no traceback, and the service isn't Live afterward:** check the
+  service's **Events** tab (not Logs) for an entry reading *"Render periodically runs
+  zero-downtime maintenance to ensure platform reliability."* Confirmed once (2026-08-05,
+  01:24 AM) — this is Render's own infrastructure restarting the instance, not a crash,
+  not OOM (checked the Metrics tab's memory graph for the same window: flat ~40-45%, no
+  spike toward the 512MB Starter ceiling), and not anything in this app's code. Despite
+  being labeled "zero-downtime," the service was found down later that same evening with
+  no live badge, discovered only because a feature failed (not any kind of alert) — the
+  gap this exposes is detection speed, not a root cause to fix in code. If this recurs
+  and Sentry/uptime alerting still isn't in place, that's the actual fix, not chasing app
+  logs for a cause — the Events tab is the fast path to the real answer.
 - **`psycopg.errors.DuplicatePreparedStatement: prepared statement "_pg3_0" already
   exists`:** not a bug in this codebase — a documented incompatibility between
   psycopg3's automatic server-side prepared statements and Supabase's Transaction-mode
