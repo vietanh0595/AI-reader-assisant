@@ -30,6 +30,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "fa867445-ade7-4318-8667-38dca27a7f07"
+      }
+    },
+    "owner": "vietanh0495"
   }
 }

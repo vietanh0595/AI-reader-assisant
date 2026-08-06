@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://ai-reader-api-h93e.onrender.com",
+        "EXPO_PUBLIC_OIDC_ISSUER_URL": "https://dev-4rdwteswugwl5wv1.us.auth0.com",
+        "EXPO_PUBLIC_OIDC_CLIENT_ID": "tJ6gSYKW6pJxVj5OxkXQqTDzl6EMjeaD",
+        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://ai-reader-api-h93e.onrender.com",
+        "EXPO_PUBLIC_OIDC_ISSUER_URL": "https://dev-4rdwteswugwl5wv1.us.auth0.com",
+        "EXPO_PUBLIC_OIDC_CLIENT_ID": "tJ6gSYKW6pJxVj5OxkXQqTDzl6EMjeaD",
+        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
