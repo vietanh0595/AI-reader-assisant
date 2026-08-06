@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import sentry_sdk
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -49,7 +50,12 @@ def build_worker(settings) -> IndexWorker:
 
 
 def main() -> None:
-    worker = build_worker(get_settings())
+    settings = get_settings()
+
+    if settings.sentry_dsn:
+        sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=1.0)
+
+    worker = build_worker(settings)
     worker.run_forever(poll_seconds=2.0)
 
 

@@ -61,6 +61,7 @@ class Settings:
     mindmap_consolidation_model: str
     db_pool_size: int
     db_max_overflow: int
+    sentry_dsn: Optional[str]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -87,6 +88,7 @@ class Settings:
             mindmap_consolidation_model=os.getenv("MINDMAP_CONSOLIDATION_MODEL", DEFAULT_MINDMAP_CONSOLIDATION_MODEL).strip() or DEFAULT_MINDMAP_CONSOLIDATION_MODEL,
             db_pool_size=int(os.getenv("DB_POOL_SIZE", str(DEFAULT_DB_POOL_SIZE))),
             db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", str(DEFAULT_DB_MAX_OVERFLOW))),
+            sentry_dsn=_read_optional_env("SENTRY_DSN"),
         )
 
     def require_openai_api_key(self) -> str:

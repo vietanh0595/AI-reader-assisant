@@ -93,6 +93,7 @@ def app_settings() -> Settings:
         mindmap_consolidation_model="gpt-4o",
         db_pool_size=3,
         db_max_overflow=2,
+        sentry_dsn=None,
     )
 
 

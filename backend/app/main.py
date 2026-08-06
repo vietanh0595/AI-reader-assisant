@@ -12,6 +12,7 @@ logging.config.dictConfig({
     "root": {"level": "INFO", "handlers": ["console"]},
 })
 
+import sentry_sdk
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -35,6 +36,12 @@ logger = logging.getLogger(__name__)
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
+
+    # No DSN (e.g. local dev) means this is a no-op - sentry_sdk's global client stays
+    # unset, so every sentry_sdk call elsewhere silently does nothing.
+    if app_settings.sentry_dsn:
+        sentry_sdk.init(dsn=app_settings.sentry_dsn, traces_sample_rate=1.0)
+
     assistant = OpenAIAssistant(app_settings)
     session_factory = create_session_factory(app_settings)
     oidc_values = (

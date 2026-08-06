@@ -10,6 +10,7 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
+import sentry_sdk
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
@@ -175,5 +176,10 @@ class IndexWorker:
                     logger.info("Job %s completed successfully", job.id)
                 except Exception:
                     logger.exception("Job %s failed", job.id)
+                    # process() catching everything here means a job failure never
+                    # crashes the process, so it would never reach Sentry's own
+                    # automatic unhandled-exception capture - report it explicitly.
+                    # A no-op if Sentry was never initialized (no SENTRY_DSN set).
+                    sentry_sdk.capture_exception()
             else:
                 time.sleep(poll_seconds)

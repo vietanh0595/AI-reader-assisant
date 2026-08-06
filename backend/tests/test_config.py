@@ -65,3 +65,21 @@ def test_db_pool_settings_read_from_env(monkeypatch):
 
     assert settings.db_pool_size == 10
     assert settings.db_max_overflow == 5
+
+
+def test_sentry_dsn_is_none_when_unset(monkeypatch):
+    monkeypatch.setattr("backend.app.config.load_project_env_files", lambda: None)
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.sentry_dsn is None
+
+
+def test_sentry_dsn_read_from_env(monkeypatch):
+    monkeypatch.setattr("backend.app.config.load_project_env_files", lambda: None)
+    monkeypatch.setenv("SENTRY_DSN", "https://examplePublicKey@o0.ingest.sentry.io/0")
+
+    settings = Settings.from_env()
+
+    assert settings.sentry_dsn == "https://examplePublicKey@o0.ingest.sentry.io/0"
