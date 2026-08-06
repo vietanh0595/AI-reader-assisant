@@ -13,7 +13,8 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://ai-reader-api-h93e.onrender.com",
         "EXPO_PUBLIC_OIDC_ISSUER_URL": "https://dev-4rdwteswugwl5wv1.us.auth0.com",
         "EXPO_PUBLIC_OIDC_CLIENT_ID": "tJ6gSYKW6pJxVj5OxkXQqTDzl6EMjeaD",
-        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api"
+        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://205dac65272df4706ad21d08461b7ba4@o4511864559108096.ingest.us.sentry.io/4511864579555328"
       }
     },
     "production": {
@@ -22,7 +23,8 @@
         "EXPO_PUBLIC_API_BASE_URL": "https://ai-reader-api-h93e.onrender.com",
         "EXPO_PUBLIC_OIDC_ISSUER_URL": "https://dev-4rdwteswugwl5wv1.us.auth0.com",
         "EXPO_PUBLIC_OIDC_CLIENT_ID": "tJ6gSYKW6pJxVj5OxkXQqTDzl6EMjeaD",
-        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api"
+        "EXPO_PUBLIC_OIDC_AUDIENCE": "ai-reader-api",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://205dac65272df4706ad21d08461b7ba4@o4511864559108096.ingest.us.sentry.io/4511864579555328"
       }
     }
   },
