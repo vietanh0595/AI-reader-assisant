@@ -20,6 +20,9 @@
       "infoPlist": {
         "NSCameraUsageDescription": "AI Book Reader uses the camera to scan book and document pages for OCR.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
       }
     },
     "android": {
