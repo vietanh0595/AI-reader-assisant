@@ -16,8 +16,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.vietanh.aibookreader",
+      "usesAppleSignIn": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "AI Book Reader uses the camera to scan book and document pages for OCR."
+        "NSCameraUsageDescription": "AI Book Reader uses the camera to scan book and document pages for OCR.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
