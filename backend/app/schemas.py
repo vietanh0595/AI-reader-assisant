@@ -91,6 +91,15 @@ class AssistRequest(BaseModel):
 class AssistResponse(BaseModel):
     eyebrow: str = Field(min_length=1, max_length=40)
     body: str = Field(min_length=1, max_length=600)
+    # Required, not defaulted: OpenAI structured outputs mark every property as
+    # required, and a reader must never be left guessing whether a claim came
+    # from the book or from the model's own knowledge.
+    beyond_book: bool = Field(
+        description=(
+            "True when the answer states anything not present in the supplied "
+            "context blocks or selected text."
+        )
+    )
 
 
 class OcrRequest(BaseModel):

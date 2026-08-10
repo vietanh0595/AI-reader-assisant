@@ -55,7 +55,39 @@ class OpenAIAssistant:
         if response.output_parsed is None:
             raise AssistantServiceError("OpenAI returned no structured answer.")
 
-        return response.output_parsed
+        return self._enforce_attribution(request, response.output_parsed)
+
+    @staticmethod
+    def _enforce_attribution(request: AssistRequest, answer: AssistResponse) -> AssistResponse:
+        """Backstop the model's own beyond_book flag for the `example` action.
+
+        Evals showed the model reliably reports beyond_book=False for `example`
+        even when the illustration appears nowhere in the passage — it treats an
+        example *about* the passage as grounded *in* it. Prompt wording and a
+        higher reasoning effort both failed to shift this.
+
+        Over-labelling is the safe direction here: a needless "Not from this
+        book" marker costs a little precision, while a missing one lets model
+        knowledge pass as the book's own words, which is the exact harm this
+        flag exists to prevent.
+        """
+        if answer.beyond_book or request.action != "example":
+            return answer
+
+        context = " ".join(block.text for block in request.context_blocks).lower()
+        # Only trust the model's "grounded" claim if the example's own wording
+        # substantially reuses the passage. Cheap heuristic, deliberately blunt.
+        answer_words = {word for word in re.findall(r"[a-z]{5,}", answer.body.lower())}
+
+        if not answer_words:
+            return answer
+
+        overlap = sum(1 for word in answer_words if word in context) / len(answer_words)
+
+        if overlap >= 0.7:
+            return answer
+
+        return answer.model_copy(update={"beyond_book": True})
 
     def extract_text(self, request: OcrRequest) -> OcrResponse:
         try:

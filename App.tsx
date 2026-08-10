@@ -197,6 +197,9 @@ type ReaderSelection = {
 type Insight = {
   eyebrow: string;
   body: string;
+  // True when the AI added knowledge the passage did not supply. Surfaced to the
+  // reader so book content and model knowledge are never indistinguishable.
+  beyondBook?: boolean;
 };
 
 type ReaderProgress = {
@@ -1892,6 +1895,8 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
   return {
     body: data.body.trim(),
     eyebrow: data.eyebrow.trim(),
+    // Older backends omit the field entirely; absent means "not flagged".
+    beyondBook: data.beyond_book === true,
   };
 }
 
@@ -6152,6 +6157,16 @@ function InsightCard({
       >
         <Text style={styles.insightBody}>{insight.body}</Text>
 
+        {insight.beyondBook ? (
+          <View
+            accessibilityRole="text"
+            accessibilityLabel="This answer includes information not from this book"
+            style={styles.beyondBookNotice}
+          >
+            <Text style={styles.beyondBookText}>Not from this book</Text>
+          </View>
+        ) : null}
+
         {sources.length > 0 && onNavigateSource ? (
           <View style={styles.insightSources}>
             <BookSources sources={sources} onNavigate={onNavigateSource} />
@@ -6702,6 +6717,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0,
+  },
+  beyondBookNotice: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.background,
+    borderColor: colors.hairline,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  beyondBookText: {
+    color: colors.mutedInk,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   insightBodyScroll: {
     maxHeight: 260,
