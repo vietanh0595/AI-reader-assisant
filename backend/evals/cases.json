@@ -1,0 +1,217 @@
+{
+  "assist": [
+    {
+      "id": "explain-word-in-context",
+      "action": "explain",
+      "selectionKind": "word",
+      "selectedText": "hysteresis",
+      "bookTitle": "Systems and Their Memory",
+      "author": "R. Alderman",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "Once a labour market has shed workers during a downturn, it often fails to reabsorb them when demand recovers. Economists call this hysteresis: the path taken by the system leaves a residue that persists after the original shock has passed."
+        }
+      ],
+      "expect": "A short definition of hysteresis as used here \u2014 a system retaining effects of a shock after the shock ends \u2014 drawn from the passage's own gloss.",
+      "traps": [
+        "Drifting into the physics/magnetism definition, which the passage does not supply.",
+        "Answering with an analogy instead of a meaning (that would be 'example', not 'explain')."
+      ],
+      "expectBeyondBook": false
+    },
+    {
+      "id": "explain-dense-phrase",
+      "action": "explain",
+      "selectionKind": "phrase",
+      "selectedText": "the marginal rate of substitution collapses toward zero",
+      "bookTitle": "Choice Under Constraint",
+      "author": "M. Feld",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "As the consumer approaches subsistence, the marginal rate of substitution collapses toward zero: no quantity of the second good will now compensate for giving up a unit of the first. The indifference curve flattens against the axis."
+        }
+      ],
+      "expect": "Explains that near subsistence the reader will no longer trade away the essential good at any price, tied to the passage's own wording.",
+      "traps": [
+        "Reciting a textbook definition of MRS without connecting it to this passage's subsistence context.",
+        "Exceeding the compact-answer rule with a full lecture on indifference curves."
+      ]
+    },
+    {
+      "id": "rephrase-preserves-meaning",
+      "action": "rephrase",
+      "selectionKind": "phrase",
+      "selectedText": "It is not the case that the absence of corroborating evidence may be treated as dispositive of the claim's falsity.",
+      "bookTitle": "Argument and Inference",
+      "author": "J. Nkemelu",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "It is not the case that the absence of corroborating evidence may be treated as dispositive of the claim's falsity. The reader must distinguish between a claim not yet supported and a claim shown to be false."
+        }
+      ],
+      "expect": "A plainer sentence carrying the same meaning: lacking evidence for a claim does not prove the claim false.",
+      "traps": [
+        "Flipping the meaning (saying absence of evidence DOES show falsity).",
+        "Adding new information or examples not in the original \u2014 rephrase must not editorialise."
+      ],
+      "expectBeyondBook": false
+    },
+    {
+      "id": "simpler-jargon-heavy",
+      "action": "simpler",
+      "selectionKind": "phrase",
+      "selectedText": "endogeneity confounds the estimated coefficient",
+      "bookTitle": "Reading Quantitative Work",
+      "author": "P. Sandoval",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "Because schooling is itself chosen partly on the basis of ability, endogeneity confounds the estimated coefficient on years of education. The regression cannot separate the return to schooling from the return to whatever led people to stay in school."
+        }
+      ],
+      "expect": "Very plain restatement: the number is untrustworthy because the thing being measured and its cause are tangled, using the passage's own schooling/ability example.",
+      "traps": [
+        "Staying jargon-heavy \u2014 'simpler' must actually lower the reading level.",
+        "Being condescending ('Basically, this is easy...')."
+      ]
+    },
+    {
+      "id": "example-abstract-concept",
+      "action": "example",
+      "selectionKind": "phrase",
+      "selectedText": "a commons subject to congestion",
+      "bookTitle": "Shared Things",
+      "author": "L. Ostrend",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "A commons subject to congestion behaves differently from one subject to depletion. The resource is not consumed, but its value to each user falls as more users arrive."
+        }
+      ],
+      "expect": "One concrete, illustrative example of a congestible commons (a road, a crowded bandwidth link, a public park) that matches the passage's not-consumed-but-degraded distinction.",
+      "traps": [
+        "Giving a depletion example (fishery, groundwater) \u2014 that is the contrast case the passage explicitly excludes.",
+        "Re-explaining the concept instead of giving an example.",
+        "An illustrative example the passage never gave is outside knowledge, so beyond_book must be true."
+      ],
+      "expectBeyondBook": true
+    },
+    {
+      "id": "summarize-page-no-selection",
+      "action": "summarize",
+      "bookTitle": "Shared Things",
+      "author": "L. Ostrend",
+      "contextScope": "visiblePage",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "A commons subject to congestion behaves differently from one subject to depletion. The resource is not consumed, but its value to each user falls as more users arrive."
+        },
+        {
+          "id": "p2",
+          "paragraphId": "p2",
+          "blockKind": "body",
+          "text": "Governance therefore aims at scheduling rather than rationing. Where a fishery needs a catch limit, a bridge needs a toll that varies with the hour."
+        }
+      ],
+      "expect": "Compact summary covering both paragraphs: congestion vs depletion, and that this changes governance from rationing to scheduling.",
+      "traps": [
+        "Summarising only the first block and dropping the governance point.",
+        "Introducing policy claims the page never makes."
+      ],
+      "expectBeyondBook": false
+    },
+    {
+      "id": "groundedness-trap-undefined-term",
+      "action": "explain",
+      "selectionKind": "phrase",
+      "selectedText": "the Lindahl equilibrium",
+      "bookTitle": "Shared Things",
+      "author": "L. Ostrend",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "Later chapters take up the Lindahl equilibrium, but the mechanism it depends on is not introduced until we have dealt with revelation. For now it is enough to note that the problem is one of getting people to state what they truly value."
+        }
+      ],
+      "expect": "May supply a brief outside definition, but MUST set beyond_book=true so the reader sees the 'Not from this book' marker, and must not claim the passage explains the mechanism it explicitly defers.",
+      "traps": [
+        "Supplying an outside definition WITHOUT setting beyond_book=true. This is the core failure this case exists to catch: unlabelled outside knowledge is indistinguishable from what the book said.",
+        "Pretending the passage explains the mechanism when it explicitly defers it."
+      ],
+      "expectBeyondBook": true
+    },
+    {
+      "id": "spoiler-trap-forward-reference",
+      "action": "ask",
+      "selectionKind": "phrase",
+      "selectedText": "the mechanism it depends on is not introduced until we have dealt with revelation",
+      "question": "What is the mechanism, and how does the book resolve it later?",
+      "bookTitle": "Shared Things",
+      "author": "L. Ostrend",
+      "contextScope": "paragraph",
+      "contextBlocks": [
+        {
+          "id": "p1",
+          "paragraphId": "p1",
+          "blockKind": "body",
+          "text": "Later chapters take up the Lindahl equilibrium, but the mechanism it depends on is not introduced until we have dealt with revelation. For now it is enough to note that the problem is one of getting people to state what they truly value."
+        }
+      ],
+      "expect": "Should decline to reveal later-chapter content, or answer only from what this passage supplies, because the app's rules forbid spoiling later parts of the book.",
+      "traps": [
+        "Answering with later-chapter content \u2014 a direct spoiler-rule violation.",
+        "Confidently describing 'how the book resolves it' when the passage gives no such information."
+      ]
+    }
+  ],
+  "ask": [
+    {
+      "id": "ask-answerable-from-book",
+      "question": "What is the main argument the author makes about attention?",
+      "includeWholeBook": true,
+      "allowGeneralKnowledge": false,
+      "expectRefusal": false,
+      "note": "Replace with a question you know your indexed test book can answer."
+    },
+    {
+      "id": "ask-unanswerable-should-refuse",
+      "question": "What does the author say about the 2027 Argentine general election?",
+      "includeWholeBook": true,
+      "allowGeneralKnowledge": false,
+      "expectRefusal": true,
+      "note": "Grounded mode must refuse rather than confabulate. Regression guard for the hard-grounding contract."
+    },
+    {
+      "id": "ask-hybrid-must-not-refuse",
+      "question": "Give me a real-world example of this idea.",
+      "includeWholeBook": true,
+      "allowGeneralKnowledge": true,
+      "expectRefusal": false,
+      "note": "Hybrid mode. Regression guard for the bug in docs/superpowers/specs/2026-06-29-hybrid-quick-ask-design.md, where example-intent chips wrongly returned 'not enough information'."
+    }
+  ]
+}

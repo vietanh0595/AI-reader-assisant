@@ -1,0 +1,46 @@
+# Whole-book agentic Ask — the most expensive and most failure-prone path.
+#
+# PRECONDITION: requires a signed-in account with an indexed book, so this flow
+# does not run from a clean state. Run it against a device/simulator that is
+# already signed in with "Whole-Book AI" enabled and indexing complete.
+#
+# Regression value: this is the flow where the quoted-answer follow-up bug and
+# the "insufficient evidence" refusals lived. It is worth running after ANY
+# change to prompts, retrieval, or the agent loop.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Ask the book"
+    timeout: 20000
+
+- tapOn: "Ask the book"
+
+- extendedWaitUntil:
+    visible: "What was the question?"
+    timeout: 10000
+
+- tapOn: "What was the question?"
+- inputText: "What is the main argument of this chapter?"
+- pressKey: Enter
+
+# Agentic loop with tool calls — allow well over a single model round-trip.
+- extendedWaitUntil:
+    visible: ".{60,}"
+    timeout: 90000
+
+# The specific failure this guards: a plausible-looking answer that is actually
+# the hard-grounding refusal. If this string appears for an answerable question,
+# retrieval or grounding has regressed.
+- assertNotVisible:
+    text: ".*not enough information.*"
+
+# Follow-up turn — exercises conversation history and the quotedAnswer path.
+- tapOn: "What was the question?"
+- inputText: "Give me an example of that"
+- pressKey: Enter
+
+- extendedWaitUntil:
+    visible: ".{60,}"
+    timeout: 90000

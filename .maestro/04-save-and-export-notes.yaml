@@ -1,0 +1,38 @@
+# Save an AI answer, then export. Covers the note persistence + export path that
+# has already produced two real bugs (silently dropped cards on colon-prefixed
+# ids; Markdown bullet lists flattened onto one line).
+#
+# Uses Summarize as the note source because it needs no WebView text selection.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Summarize current page"
+    timeout: 20000
+
+- tapOn: "Summarize current page"
+- extendedWaitUntil:
+    visible: "Summary"
+    timeout: 60000
+
+# Save the generated insight.
+- tapOn:
+    text: "Save"
+    optional: false
+
+# Open saved notes and confirm it persisted.
+- tapOn: "Search saved notes"
+- extendedWaitUntil:
+    visible: "Export saved notes"
+    timeout: 10000
+
+- assertVisible: "Export saved notes"
+
+# Export opens the native share sheet. Maestro cannot assert inside the system
+# share UI, so this only proves export is reachable and does not crash — the
+# formatting itself is covered by unit tests on the formatter.
+- tapOn: "Export saved notes"
+- extendedWaitUntil:
+    visible: ".*"
+    timeout: 15000

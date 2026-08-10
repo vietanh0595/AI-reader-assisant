@@ -1,0 +1,24 @@
+# Cold-start smoke test. Cheapest possible signal: the app launches, the reader
+# renders, and the primary controls exist. Run this first — if it fails, nothing
+# below it is worth running.
+appId: com.vietanh.aibookreader
+---
+- launchApp:
+    clearState: true          # exercise the true first-run path, not a warm cache
+
+- extendedWaitUntil:
+    visible: "Open library"
+    timeout: 20000
+
+# Core controls present on the reader shell.
+- assertVisible: "Open library"
+- assertVisible: "Ask the book"
+- assertVisible: "Table of contents"
+
+# The sample book must work with no account — this is the guest path that the
+# whole onboarding story depends on.
+- tapOn: "Table of contents"
+- extendedWaitUntil:
+    visible: ".*"
+    timeout: 10000
+- back

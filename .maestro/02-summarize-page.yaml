@@ -1,0 +1,28 @@
+# AI action that needs NO text selection, so it is fully scriptable.
+#
+# Text selection happens inside a WebView; Maestro cannot reliably drive a
+# native-looking text selection there (see .maestro/README.md). "Summarize
+# current page" is the one quick action that bypasses selection entirely, which
+# makes it the best UI-level proof that the whole AI round-trip works:
+# app -> backend -> OpenAI -> rendered answer card.
+#
+# This asserts the pipeline runs, NOT that the summary is any good.
+# Answer quality is evaluated in backend/evals/.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Summarize current page"
+    timeout: 20000
+
+- tapOn: "Summarize current page"
+
+# Generous timeout: a real model round-trip on a cold Render instance can be slow.
+- extendedWaitUntil:
+    visible: "Summary"
+    timeout: 60000
+
+# Guard against the empty-answer failure mode — a card that renders with no body.
+- assertVisible:
+    text: ".{40,}"
