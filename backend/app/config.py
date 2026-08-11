@@ -22,12 +22,21 @@ DEFAULT_RAG_MIN_VECTOR_SIMILARITY = 0.20
 DEFAULT_RAG_CONTEXT_MAX_CHARS = 18_000
 DEFAULT_MINDMAP_EXTRACTION_MODEL = "gpt-4o-mini"
 DEFAULT_MINDMAP_CONSOLIDATION_MODEL = "gpt-4o"
-# Matches the web service's current pool (backend/app/db/session.py); the worker
-# (worker_main.py) currently wants a smaller pool (2/1) and can override that via its
-# own DB_POOL_SIZE/DB_MAX_OVERFLOW env vars on its Render service - these are just the
-# fallback when neither is set.
-DEFAULT_DB_POOL_SIZE = 3
-DEFAULT_DB_MAX_OVERFLOW = 2
+# Sized for the web service (backend/app/db/session.py), which is the side that fans out:
+# its route handlers are sync `def`, so Starlette runs them in a threadpool and many
+# requests can want a connection at once. The old 3+2 meant five connections for every
+# user of the whole app, which is below a single TestFlight batch.
+#
+# 10+15 = 25 worst case. Supabase's free tier allows 200 client connections, and the
+# worker keeps its own separate engine against the same budget, so this stays far inside
+# it. The worker is a single polling loop and wants a *smaller* pool - set DB_POOL_SIZE=2
+# and DB_MAX_OVERFLOW=1 on the `ai-reader-worker` Render service so it doesn't inherit
+# these web-sized values.
+#
+# Both are env-var driven so they can be retuned from Render's dashboard without a
+# redeploy; these are only the fallback when neither is set.
+DEFAULT_DB_POOL_SIZE = 10
+DEFAULT_DB_MAX_OVERFLOW = 15
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_DIR.parent
 

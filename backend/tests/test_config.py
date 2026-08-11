@@ -50,8 +50,10 @@ def test_db_pool_settings_default_when_unset(monkeypatch):
 
     settings = Settings.from_env()
 
-    assert settings.db_pool_size == 3
-    assert settings.db_max_overflow == 2
+    # Sized for the web service, which fans out across a threadpool. The worker
+    # overrides these downward on its own Render service.
+    assert settings.db_pool_size == 10
+    assert settings.db_max_overflow == 15
 
 
 def test_db_pool_settings_read_from_env(monkeypatch):
