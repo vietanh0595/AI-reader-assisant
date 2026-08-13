@@ -27,8 +27,25 @@ function pct(progress: number): number {
 export function WholeBookAiSheet({ state, onClose, onEnable, onRetry }: WholeBookAiSheetProps) {
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} accessibilityLabel="Dismiss" accessibilityRole="button">
-        <Pressable style={styles.sheet} onPress={() => {}}>
+      {/*
+        The scrim stays tappable to dismiss, but must NOT carry an
+        accessibilityLabel/role. Doing so promotes it to a single accessibility
+        element, which collapses every child into it: VoiceOver then announces
+        only "Dismiss" and the title, the explanation of what gets uploaded,
+        Enable, and Close all become unreachable. Worst possible screen for
+        that, since this is the consent step for sending book text to a server.
+        Dismissal is still offered accessibly by the explicit Close button below.
+      */}
+      <Pressable style={styles.overlay} onPress={onClose} accessible={false}>
+        {/*
+          onPress is a no-op that stops a tap on the sheet from reaching the
+          scrim and dismissing it. accessible={false} is required alongside it:
+          a Pressable with a handler becomes an accessibility element and merges
+          its children into one announcement, so without this the whole sheet
+          reads as a single run-on string instead of separate, focusable title,
+          body, Enable and Close elements.
+        */}
+        <Pressable style={styles.sheet} onPress={() => {}} accessible={false}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={styles.title}>✦ Book AI</Text>
