@@ -1,0 +1,54 @@
+# SETUP HELPER — not a test. Run once per book to satisfy the preconditions of
+# 03-ask-the-book, 06-clear-conversation and 09-mind-map.
+#
+# Tagged `setup` so it is excluded from the normal suite run alongside the
+# destructive smoke flow:
+#
+#   maestro test --exclude-tags=destructive,setup .maestro/
+#
+# Enabling uploads normalized book text to the backend and builds the vector
+# index. That is a real background job — for a 1100-paragraph book expect a
+# couple of minutes and a small embeddings charge. It is one-time per book,
+# which is exactly why it does not belong inside a test that runs repeatedly.
+tags:
+  - setup
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Ask the book"
+    timeout: 20000
+- tapOn: "Ask the book"
+
+# The sheet animates in. A `when:` condition is evaluated once, immediately, so
+# without this it reads the screen before the sheet exists and silently SKIPS
+# the whole block — looking like "already enabled" when it is not.
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Already enabled? Then there is nothing to do.
+- runFlow:
+    when:
+      visible: "Enable whole-book AI"
+    commands:
+      - tapOn: "Enable whole-book AI"
+      # Indexing runs in the background. When it finishes the sheet swaps to a
+      # "Whole-Book AI is ready." state — it does NOT drop straight into the
+      # composer, so waiting for the question field here would time out even on
+      # a completely successful run.
+      - extendedWaitUntil:
+          visible: "Whole-Book AI is ready."
+          timeout: 900000
+      # "Start asking" only dismisses the sheet and returns to the reader; it
+      # does not open the composer.
+      - tapOn: "Start asking"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - tapOn: "Ask the book"
+
+# Whether we just enabled it or it was already on, the composer is the proof
+# that the book is answerable.
+- extendedWaitUntil:
+    visible: "Ask a follow-up.*"
+    timeout: 20000

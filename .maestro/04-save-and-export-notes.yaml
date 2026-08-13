@@ -22,16 +22,30 @@ appId: com.vietanh.aibookreader
     optional: false
 
 # Open saved notes and confirm it persisted.
-- tapOn: "Search saved notes"
+#
+# The bookmark button's accessibility label is built from the note count
+# (`${savedCount} saved notes`), so it reads "1 saved notes", "2 saved notes",
+# and so on. It has to be matched as a pattern — a fixed string can never hit
+# it. ("Search saved notes" is the search field *inside* this sheet, not the
+# way in.)
+- tapOn:
+    text: "\\d+ saved notes"
+
 - extendedWaitUntil:
-    visible: "Export saved notes"
+    visible: "Saved notes"
     timeout: 10000
 
-- assertVisible: "Export saved notes"
+# The note we just saved is really in the list, not just a sheet that opened.
+- assertVisible:
+    text: "[1-9]\\d* total"
 
-# Export opens the native share sheet. Maestro cannot assert inside the system
-# share UI, so this only proves export is reachable and does not crash — the
-# formatting itself is covered by unit tests on the formatter.
+# Export opens the native share sheet. Maestro cannot assert inside system UI,
+# so this only proves export is reachable and does not crash — the formatting
+# itself is covered by unit tests on the formatter.
+#
+# Matched by accessibilityLabel, not the visible "Export" text: the Pressable
+# carries a label, which replaces its children in the accessibility tree, so
+# the inner Text is invisible to Maestro. Same trap as the notes button above.
 - tapOn: "Export saved notes"
 - extendedWaitUntil:
     visible: ".*"

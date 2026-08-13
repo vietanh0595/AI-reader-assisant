@@ -18,10 +18,10 @@ appId: com.vietanh.aibookreader
 - tapOn: "Ask the book"
 
 - extendedWaitUntil:
-    visible: "What was the question?"
+    visible: "Ask a follow-up.*"
     timeout: 10000
 
-- tapOn: "What was the question?"
+- tapOn: "Ask a follow-up.*"
 - inputText: "What is the main argument of this chapter?"
 - pressKey: Enter
 
@@ -37,7 +37,7 @@ appId: com.vietanh.aibookreader
     text: ".*not enough information.*"
 
 # Follow-up turn — exercises conversation history and the quotedAnswer path.
-- tapOn: "What was the question?"
+- tapOn: "Ask a follow-up.*"
 - inputText: "Give me an example of that"
 - pressKey: Enter
 

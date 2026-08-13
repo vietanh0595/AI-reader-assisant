@@ -27,16 +27,23 @@ appId: com.vietanh.aibookreader
 - tapOn: "Ask the book"
 
 - extendedWaitUntil:
-    visible: "What was the question?"
+    visible: "Ask a follow-up.*"
     timeout: 10000
 
-- tapOn: "What was the question?"
+- tapOn: "Ask a follow-up.*"
 - inputText: "What is this chapter about?"
 - tapOn: "Send"
 
 - extendedWaitUntil:
     visible: ".{60,}"
     timeout: 90000
+
+# The question we asked is in the thread as our own turn. It is short, unique
+# and free of regex metacharacters, which makes it a far better probe than a
+# ".{60,}" length match — the reader's book text sits behind the thread in the
+# hierarchy and would satisfy any generic long-text assertion.
+- assertVisible:
+    text: "What is this chapter about.*"
 
 # A destructive action must ask first.
 - tapOn: "Clear conversation"
@@ -47,7 +54,7 @@ appId: com.vietanh.aibookreader
 # Cancel must actually cancel — the thread should survive untouched.
 - tapOn: "Cancel"
 - assertVisible:
-    text: ".{60,}"
+    text: "What is this chapter about.*"
 
 # Now confirm for real.
 - tapOn: "Clear conversation"
@@ -56,8 +63,9 @@ appId: com.vietanh.aibookreader
     timeout: 10000
 - tapOn: "Clear"
 
-# Thread is empty and the app invites a fresh start rather than showing a
-# broken or half-populated view.
+# The thread is genuinely empty: our question is gone, while the composer
+# remains so the reader can start again rather than facing a broken panel.
 - extendedWaitUntil:
-    visible: "Start asking"
+    notVisible: "What is this chapter about.*"
     timeout: 10000
+- assertVisible: "Ask a follow-up.*"
