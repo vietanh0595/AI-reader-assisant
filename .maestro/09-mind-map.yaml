@@ -1,15 +1,20 @@
-# Mind map opens, renders, and drills into a chapter.
+# Mind map opens and lands in a coherent state.
 #
-# PRECONDITION: signed in, with an indexed book whose mind map is ALREADY
-# generated. This flow deliberately does not trigger generation: that is a
-# multi-minute background job fanning out many gpt-4o consolidation calls, which
-# is both the app's most expensive operation and far too slow for a UI test.
-# Generation is covered by backend tests and the manual checklist instead.
+# PRECONDITION: signed in with an indexed book.
 #
-# Regression value: the mind map has produced several real bugs of the "dead
-# end" shape — a popup with no way to enable the feature it needed, view state
-# lost on back-navigation, chapter drill-down not matching book-map behaviour.
-# Those are all navigation bugs, which is exactly what a UI robot is good at.
+# Opening the map AUTO-STARTS generation if none exists — that is the inline
+# enable/auto-continue behaviour, added deliberately to kill a dead end where
+# the popup offered no way forward. So there are three legitimate states and
+# the flow must accept all of them; asserting only the finished map would fail
+# on a fresh book for no good reason.
+#
+# Generation itself is not waited on: a multi-minute fan-out of gpt-4o
+# consolidation calls is the wrong shape for a UI loop, and it costs real money
+# every run. Backend tests and the manual checklist cover generation quality.
+#
+# Regression value: the map's real bugs have been navigation dead ends — a
+# popup with no way to enable what it needed, lost view position on back, and
+# chapter drill-down diverging from book-map behaviour.
 appId: com.vietanh.aibookreader
 ---
 - launchApp
@@ -18,34 +23,86 @@ appId: com.vietanh.aibookreader
     visible: "Mind map"
     timeout: 20000
 
+# The background-job completion banner ("'<book>' is ready") overlays the
+# reader header, which is exactly where the Mind map button lives. Maestro will
+# still report the tap COMPLETED — the element is in the hierarchy, so it taps
+# its coordinates — while the banner swallows it and nothing happens. A
+# completed tap is not necessarily an effective tap.
+- tapOn:
+    text: "Dismiss"
+    optional: true
+
 - tapOn: "Mind map"
 
-# Either the map renders, or the app offers to enable Whole-Book AI. Both are
-# valid; a blank screen with neither is the dead-end bug this guards.
-- extendedWaitUntil:
-    visible: ".*"
-    timeout: 45000
+# Sheets and the map canvas both animate; a `when:` condition is evaluated once
+# and immediately, so without this every branch below can silently SKIP.
+- waitForAnimationToEnd:
+    timeout: 8000
 
+# State 1 — Whole-Book AI is off. The reader must be offered a way forward
+# rather than a blank screen.
 - runFlow:
     when:
       visible: "Enable whole-book AI"
     commands:
-      # Not generating here (too slow/expensive) — just proving the inline
-      # enable exists rather than leaving the reader stuck.
       - assertVisible: "Enable whole-book AI"
 
+# State 2 — generating. The job runs on the backend, so the app must say what
+# is happening AND make clear the reader is not trapped waiting for it. That
+# reassurance is the whole point of the background-job work.
 - runFlow:
     when:
-      notVisible: "Enable whole-book AI"
+      visible: "Generating mind map.*"
     commands:
-      # Drill into a chapter, then back out. Position is restored on return —
-      # that behaviour was added deliberately and is easy to regress.
-      - tapOn:
-          point: "50%,50%"
+      - assertVisible: "You can close this.*"
+      - tapOn: "Back"
       - extendedWaitUntil:
-          visible: "Back to chapters"
-          timeout: 20000
-      - tapOn: "Back to chapters"
-      - extendedWaitUntil:
-          visible: "Mind map"
+          visible: "Table of contents"
           timeout: 15000
+
+# State 3 — a finished map. Drill into a chapter and come back out; returning
+# must restore the map rather than resetting it.
+#
+# Gated on "Table of contents" being absent, i.e. we are still on the map
+# screen. Without that, state 2 above navigates back to the reader and this
+# block's "not generating / not enable" conditions become trivially true
+# there — so it would tap blindly into the middle of the book.
+- runFlow:
+    when:
+      notVisible: "Table of contents"
+    commands:
+      - runFlow:
+          when:
+            notVisible: "Generating mind map.*"
+          commands:
+            # The map rendered. Both view chips must be present — this is the
+            # hybrid Concepts/Chapters design, and a map that renders with only
+            # one of them is broken.
+            - assertVisible: "Concepts"
+            - assertVisible: "Chapters"
+
+            # Switching views is the book-agnostic half of the navigation, and
+            # it is where the dead-end bugs have lived. The map opens on
+            # Concepts, so "Back to chapters" does not exist yet.
+            - tapOn: "Chapters"
+            - waitForAnimationToEnd:
+                timeout: 5000
+            - assertVisible: "Chapters"
+
+            - tapOn: "Concepts"
+            - waitForAnimationToEnd:
+                timeout: 5000
+            - assertVisible: "Concepts"
+
+            # Leaving the map must return to the reader, not strand the user.
+            - tapOn: "Back"
+            - extendedWaitUntil:
+                visible: "Table of contents"
+                timeout: 15000
+
+            # NOT automated: drilling into a specific chapter and returning via
+            # "Back to chapters". Chapter nodes are laid out radially and named
+            # per book, so selecting one means either hardcoding this book's
+            # chapter titles or tapping blind coordinates — both make the flow
+            # lie when the book changes. Drill-down stays on the manual
+            # checklist.

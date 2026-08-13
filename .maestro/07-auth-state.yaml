@@ -16,29 +16,64 @@ appId: com.vietanh.aibookreader
 ---
 - launchApp
 
+# Account controls live on the Library screen (LibraryScreen), not the reader.
+- extendedWaitUntil:
+    visible: "Open library"
+    timeout: 20000
+- tapOn:
+    text: "Dismiss"
+    optional: true
+- tapOn: "Open library"
+
 - extendedWaitUntil:
     visible: "Sign out"
-    timeout: 20000
+    timeout: 15000
 
 - tapOn: "Sign out"
 
-# Sign-out may confirm first; accept either shape rather than assuming.
+# Sign-out is guarded by an Alert ("Sign out?" / Cancel / Sign out). Wait for it
+# rather than blind-tapping: the alert takes a moment, and the library button
+# underneath ALSO matches "Sign out", so an early tap hits the covered button
+# and silently does nothing while reporting COMPLETED.
+- extendedWaitUntil:
+    visible: "Sign out?"
+    timeout: 10000
+
+# index: 1 selects the alert's button rather than the library button behind it,
+# since both match the same text.
 - tapOn:
     text: "Sign out"
-    optional: true
+    index: 1
 
 - extendedWaitUntil:
     visible: "Sign in"
     timeout: 15000
 
-# The guest experience must still work. Summarize is guest-open and needs no
-# text selection, so it is the cheapest proof the core loop survived sign-out.
-- assertVisible: "Summarize current page"
+# Back into the book. The guest experience must still work: Summarize is
+# guest-open and needs no text selection, so it is the cheapest proof the core
+# loop survived sign-out.
+# Matched by pattern rather than coordinates: the library labels each entry
+# "Resume <book title>", so this works for whatever book is open without
+# hardcoding a title or guessing where a card sits on screen.
+- tapOn:
+    text: "Resume .*"
+
+# Signing out raises the session banner, which overlays the reader header — the
+# same interception that makes the header's own controls untappable. Clear it
+# before touching anything up there.
+- tapOn:
+    text: "Dismiss"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- extendedWaitUntil:
+    visible: "Summarize current page"
+    timeout: 15000
 - tapOn: "Summarize current page"
 
 - extendedWaitUntil:
     visible: "Summary"
     timeout: 60000
-
-# Signed-out users must be told to sign in, never hit a dead button.
-- assertNotVisible: "Sign out"
+- assertVisible:
+    text: ".{40,}"
