@@ -1,12 +1,19 @@
 # Reading position survives a full app restart.
 #
-# Guards the local persistence layer, which has already produced one severe bug:
-# a note with a null citation field failed validation on load and silently
-# deleted an entire book's saved data. Persistence bugs are invisible until a
-# relaunch, so no amount of in-session tapping finds them.
+# PRECONDITION: an IMPORTED book (EPUB/PDF) must be open — not the bundled
+# sample. For `source === 'sample'`, getReaderProgress() returns the book's
+# hardcoded page/progress strings, which never change as you read, so there
+# would be nothing to compare. For imported books it returns a live
+# "Paragraph N of M", which is exactly the anchor this flow needs.
 #
-# Uses copyTextFrom rather than a hardcoded string so the flow does not depend
-# on the sample book's wording.
+# Why the progress line and not the book text: the reader renders paragraphs
+# inside a WebView, which Maestro cannot read. The progress line is native
+# RN Text, so it is the only position marker actually visible to the robot.
+#
+# Guards the local persistence layer, which has already destroyed data once:
+# a note with a null citation field failed validation on load and silently
+# wiped an entire book's saved notes. Persistence bugs are invisible until a
+# relaunch, so no amount of in-session tapping finds them.
 appId: com.vietanh.aibookreader
 ---
 - launchApp
@@ -15,24 +22,26 @@ appId: com.vietanh.aibookreader
     visible: "Table of contents"
     timeout: 20000
 
-# Navigate somewhere specific so "still on page 1" cannot pass by accident.
+# Move somewhere specific, so "still at the start" cannot pass by accident.
 - tapOn: "Table of contents"
 - extendedWaitUntil:
     visible: "Contents"
     timeout: 10000
-
-# Jump to a chapter partway in, then remember what we landed on.
 - tapOn:
     point: "50%,60%"
+
 - extendedWaitUntil:
     visible: "Table of contents"
     timeout: 15000
 
+# Remember the live position. Fails loudly if the progress line is missing,
+# rather than silently skipping the whole point of the test.
+- assertVisible:
+    text: "Paragraph \\d+ of \\d+"
 - copyTextFrom:
-    id: "reader-paragraph"
-    optional: true
+    text: "Paragraph \\d+ of \\d+"
 
-# Full restart — not a background/foreground cycle, which would prove nothing.
+# Full restart, not a background/foreground cycle, which would prove nothing.
 - stopApp
 - launchApp
 
@@ -40,7 +49,6 @@ appId: com.vietanh.aibookreader
     visible: "Table of contents"
     timeout: 20000
 
-# The reader must return to where it was, not to the top of the book.
+# Must return to the same paragraph, not to the top of the book.
 - assertVisible:
     text: "${maestro.copiedText}"
-    optional: true

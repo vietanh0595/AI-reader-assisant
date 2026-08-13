@@ -42,8 +42,8 @@ view hierarchy and what each element is matchable by.
 | `02-summarize-page` | nothing | full AI round-trip: app → backend → OpenAI → answer card |
 | `03-ask-the-book` | signed in + indexed book | agentic ask, conversation history, follow-up turns |
 | `04-save-and-export-notes` | nothing | note persistence + export reachability |
-| `05-reading-position-persists` | nothing | position survives a full restart (guards the persistence layer) |
-| `06-clear-conversation` | signed in + indexed book | clear **archives** rather than deletes; reopen restores |
+| `05-reading-position-persists` | **an imported book open** (not the sample) | position survives a full restart (guards the persistence layer) |
+| `06-clear-conversation` | signed in + indexed book | clear is confirmed first; cancel cancels; thread empties |
 | `07-auth-state` | starts signed in | sign-out leaves a working guest app |
 | `08-backend-failure` | **build pointed at a dead URL** | fails loudly — named error + Retry, never a silent hang |
 | `09-mind-map` | signed in + map already generated | opens, renders, chapter drill-down and back |
@@ -63,6 +63,21 @@ Two flows need a specially-built app rather than the normal one:
 - `09-mind-map` deliberately does not trigger generation. That is a multi-minute
   background job fanning out expensive `gpt-4o` calls; it belongs in backend
   tests and the manual checklist, not a UI loop.
+- `05-reading-position-persists` needs an **imported** book open. For the bundled
+  sample, `getReaderProgress()` returns hardcoded page/progress strings that
+  never change while reading, so there would be no position to compare.
+
+## A note on writing assertions here
+
+Two traps worth avoiding, both hit while writing these flows:
+
+1. **`optional: true` on the assertion that IS the test.** A flow whose only
+   check is optional passes while verifying nothing. Reserve `optional` for
+   incidental steps (a confirm dialog that may not appear), never for the thing
+   you are actually proving.
+2. **Matching by `id:` when the app has no `testID`s.** `App.tsx` currently has
+   zero, so any `id:` selector silently matches nothing. Match on visible text or
+   `accessibilityLabel` until testIDs exist.
 
 ## Known limitation: text selection is inside a WebView
 

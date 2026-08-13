@@ -1,11 +1,22 @@
-# Clear conversation archives the thread, and reopening restores it.
+# Clearing a conversation is confirmed first, and empties the thread.
 #
 # PRECONDITION: signed in, with an indexed book (same as 03-ask-the-book).
 #
-# The feature exists to stop history bleed — stale earlier turns steering a
-# later vague follow-up. The bug worth catching here is the destructive one:
-# "clear" was specified as ARCHIVE, not delete, so a cleared thread must come
-# back via "Reopen conversation". If it doesn't, the user silently lost work.
+# IMPORTANT — what this does NOT test, and why:
+#
+# "Clear conversation" writes the old turns into `archivedConversations`
+# (App.tsx ~3940), so the data is kept. But NOTHING IN THE UI EVER READS THAT
+# ARRAY. There is no screen, button, or gesture that shows a cleared thread.
+# ("Reopen conversation" is unrelated — it only un-collapses a minimised
+# thread via setIsThreadCollapsed(false).)
+#
+# So from the reader's point of view, clearing is currently indistinguishable
+# from deleting. A restore assertion here would be asserting a feature that
+# does not exist. Tracked as an open question in the release plan instead:
+# either build the restore UI, or stop archiving data nobody can reach.
+#
+# What IS worth guarding: the destructive action must stay behind a
+# confirmation, and cancelling must genuinely cancel.
 appId: com.vietanh.aibookreader
 ---
 - launchApp
@@ -27,20 +38,26 @@ appId: com.vietanh.aibookreader
     visible: ".{60,}"
     timeout: 90000
 
-- copyTextFrom:
-    text: ".{60,}"
-    optional: true
-
-# Clear the thread.
+# A destructive action must ask first.
 - tapOn: "Clear conversation"
+- extendedWaitUntil:
+    visible: "Clear conversation?"
+    timeout: 10000
+
+# Cancel must actually cancel — the thread should survive untouched.
+- tapOn: "Cancel"
+- assertVisible:
+    text: ".{60,}"
+
+# Now confirm for real.
+- tapOn: "Clear conversation"
+- extendedWaitUntil:
+    visible: "Clear conversation?"
+    timeout: 10000
+- tapOn: "Clear"
+
+# Thread is empty and the app invites a fresh start rather than showing a
+# broken or half-populated view.
 - extendedWaitUntil:
     visible: "Start asking"
     timeout: 10000
-
-# Archived, not deleted — the restore path must exist.
-- assertVisible: "Reopen conversation"
-- tapOn: "Reopen conversation"
-
-- extendedWaitUntil:
-    visible: ".{60,}"
-    timeout: 15000
