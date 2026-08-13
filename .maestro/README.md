@@ -26,10 +26,19 @@ identical binary your testers install.
 ## Running
 
 ```bash
-maestro test .maestro/01-smoke-launch.yaml     # single flow
-maestro test .maestro/                         # everything
-maestro studio                                 # interactive selector inspector
+maestro test --exclude-tags=destructive .maestro/   # the normal suite run
+maestro test .maestro/06-clear-conversation.yaml    # a single flow
+maestro studio                                      # interactive selector inspector
 ```
+
+> **Always pass `--exclude-tags=destructive` when running the folder.**
+> `01-smoke-launch` is tagged `destructive` because it launches with
+> `clearState: true`, which wipes imported books, saved notes, and your
+> sign-in. Without the flag it runs first (alphabetically) and deletes the
+> setup every other flow depends on. Naming a single file explicitly always
+> runs it, tags or not.
+>
+> Run `01` deliberately, on its own, **before** setting up test data.
 
 `maestro studio` is the fastest way to fix a broken selector — it shows the live
 view hierarchy and what each element is matchable by.
@@ -48,11 +57,13 @@ view hierarchy and what each element is matchable by.
 | `08-backend-failure` | **build pointed at a dead URL** | fails loudly — named error + Retry, never a silent hang |
 | `09-mind-map` | signed in + map already generated | opens, renders, chapter drill-down and back |
 
-Run `01` first. If it fails, nothing else is worth running.
+**Suggested order**, because `07-auth-state` signs you out and several flows need
+an account: `01` (destructive, on its own) → set up test data → `02 03 04 05 06 09`
+→ `07` last → `08` separately with its own build.
 
-**Status: 01-04 have been exercised; 05-09 pass syntax validation but have not yet
-been run against a real build.** Expect to fix a few selectors on first run —
-`maestro studio` is the fast way to do that.
+**Status: 01 and 02 pass against a real build (2026-08-13). 03-09 not yet run.**
+Expect to fix a few selectors on the first pass — `maestro studio` is the fast
+way to do that.
 
 Two flows need a specially-built app rather than the normal one:
 

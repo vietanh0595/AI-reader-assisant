@@ -1,10 +1,21 @@
-# Cold-start smoke test. Cheapest possible signal: the app launches, the reader
-# renders, and the primary controls exist. Run this first — if it fails, nothing
-# below it is worth running.
+# Cold-start smoke test. Cheapest possible signal: the app launches from a
+# genuine first-run state, the reader renders, and the primary controls exist.
+#
+# DESTRUCTIVE — tagged so it is excluded from the normal suite run.
+# `clearState: true` wipes app data: imported books, saved notes, and your
+# sign-in all go. That is exactly what makes it a real first-run test, and
+# exactly why it must not run before flows that need an imported book or an
+# account. Normal run:
+#
+#   maestro test --exclude-tags=destructive .maestro/
+#
+# Run this one deliberately, on its own, BEFORE setting up test data.
+tags:
+  - destructive
 appId: com.vietanh.aibookreader
 ---
 - launchApp:
-    clearState: true          # exercise the true first-run path, not a warm cache
+    clearState: true
 
 - extendedWaitUntil:
     visible: "Open library"
@@ -15,10 +26,17 @@ appId: com.vietanh.aibookreader
 - assertVisible: "Ask the book"
 - assertVisible: "Table of contents"
 
-# The sample book must work with no account — this is the guest path that the
-# whole onboarding story depends on.
+# The sample book must work with no account — this is the guest path the whole
+# onboarding story depends on.
 - tapOn: "Table of contents"
 - extendedWaitUntil:
-    visible: ".*"
+    visible: "Contents"
     timeout: 10000
-- back
+
+# Dismiss the sheet properly. `back` is an Android gesture; on iOS it maps to a
+# swipe that does not close a bottom sheet, so it silently left the sheet open
+# and handed dirty state to the next flow.
+- tapOn:
+    text: "Close"
+    optional: true
+- assertVisible: "Table of contents"
