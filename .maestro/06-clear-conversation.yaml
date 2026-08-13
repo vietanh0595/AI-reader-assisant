@@ -1,0 +1,46 @@
+# Clear conversation archives the thread, and reopening restores it.
+#
+# PRECONDITION: signed in, with an indexed book (same as 03-ask-the-book).
+#
+# The feature exists to stop history bleed — stale earlier turns steering a
+# later vague follow-up. The bug worth catching here is the destructive one:
+# "clear" was specified as ARCHIVE, not delete, so a cleared thread must come
+# back via "Reopen conversation". If it doesn't, the user silently lost work.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Ask the book"
+    timeout: 20000
+- tapOn: "Ask the book"
+
+- extendedWaitUntil:
+    visible: "What was the question?"
+    timeout: 10000
+
+- tapOn: "What was the question?"
+- inputText: "What is this chapter about?"
+- tapOn: "Send"
+
+- extendedWaitUntil:
+    visible: ".{60,}"
+    timeout: 90000
+
+- copyTextFrom:
+    text: ".{60,}"
+    optional: true
+
+# Clear the thread.
+- tapOn: "Clear conversation"
+- extendedWaitUntil:
+    visible: "Start asking"
+    timeout: 10000
+
+# Archived, not deleted — the restore path must exist.
+- assertVisible: "Reopen conversation"
+- tapOn: "Reopen conversation"
+
+- extendedWaitUntil:
+    visible: ".{60,}"
+    timeout: 15000

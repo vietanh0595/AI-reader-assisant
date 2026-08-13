@@ -1,0 +1,51 @@
+# Mind map opens, renders, and drills into a chapter.
+#
+# PRECONDITION: signed in, with an indexed book whose mind map is ALREADY
+# generated. This flow deliberately does not trigger generation: that is a
+# multi-minute background job fanning out many gpt-4o consolidation calls, which
+# is both the app's most expensive operation and far too slow for a UI test.
+# Generation is covered by backend tests and the manual checklist instead.
+#
+# Regression value: the mind map has produced several real bugs of the "dead
+# end" shape — a popup with no way to enable the feature it needed, view state
+# lost on back-navigation, chapter drill-down not matching book-map behaviour.
+# Those are all navigation bugs, which is exactly what a UI robot is good at.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Mind map"
+    timeout: 20000
+
+- tapOn: "Mind map"
+
+# Either the map renders, or the app offers to enable Whole-Book AI. Both are
+# valid; a blank screen with neither is the dead-end bug this guards.
+- extendedWaitUntil:
+    visible: ".*"
+    timeout: 45000
+
+- runFlow:
+    when:
+      visible: "Enable whole-book AI"
+    commands:
+      # Not generating here (too slow/expensive) — just proving the inline
+      # enable exists rather than leaving the reader stuck.
+      - assertVisible: "Enable whole-book AI"
+
+- runFlow:
+    when:
+      notVisible: "Enable whole-book AI"
+    commands:
+      # Drill into a chapter, then back out. Position is restored on return —
+      # that behaviour was added deliberately and is easy to regress.
+      - tapOn:
+          point: "50%,50%"
+      - extendedWaitUntil:
+          visible: "Back to chapters"
+          timeout: 20000
+      - tapOn: "Back to chapters"
+      - extendedWaitUntil:
+          visible: "Mind map"
+          timeout: 15000

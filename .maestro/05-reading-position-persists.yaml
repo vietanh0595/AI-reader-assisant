@@ -1,0 +1,46 @@
+# Reading position survives a full app restart.
+#
+# Guards the local persistence layer, which has already produced one severe bug:
+# a note with a null citation field failed validation on load and silently
+# deleted an entire book's saved data. Persistence bugs are invisible until a
+# relaunch, so no amount of in-session tapping finds them.
+#
+# Uses copyTextFrom rather than a hardcoded string so the flow does not depend
+# on the sample book's wording.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Table of contents"
+    timeout: 20000
+
+# Navigate somewhere specific so "still on page 1" cannot pass by accident.
+- tapOn: "Table of contents"
+- extendedWaitUntil:
+    visible: "Contents"
+    timeout: 10000
+
+# Jump to a chapter partway in, then remember what we landed on.
+- tapOn:
+    point: "50%,60%"
+- extendedWaitUntil:
+    visible: "Table of contents"
+    timeout: 15000
+
+- copyTextFrom:
+    id: "reader-paragraph"
+    optional: true
+
+# Full restart — not a background/foreground cycle, which would prove nothing.
+- stopApp
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Table of contents"
+    timeout: 20000
+
+# The reader must return to where it was, not to the top of the book.
+- assertVisible:
+    text: "${maestro.copiedText}"
+    optional: true

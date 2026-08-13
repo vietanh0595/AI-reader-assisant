@@ -1,0 +1,37 @@
+# The app fails loudly when the backend is unreachable.
+#
+# PRECONDITION: run against a build whose EXPO_PUBLIC_API_BASE_URL points at a
+# dead host, e.g.
+#   EXPO_PUBLIC_API_BASE_URL=https://127.0.0.1:9 npx expo run:ios
+# The URL is baked in at build time, so Maestro cannot fake this at runtime and
+# this flow will (correctly) fail against a healthy build.
+#
+# Why this matters more than it looks: the failure mode that actually hurt this
+# app was silence. The Anki export dropped every highlight with no alert and no
+# error for two runs before anyone noticed; the Render restart was discovered by
+# a feature failing rather than an alert. A blank card or an endless spinner is
+# the worst outcome, because the user assumes their own book is the problem.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Summarize current page"
+    timeout: 20000
+
+- tapOn: "Summarize current page"
+
+# A real, named error must appear. Not a spinner that never resolves.
+- extendedWaitUntil:
+    visible: "AI unavailable"
+    timeout: 45000
+
+# And the user must have a way forward.
+- assertVisible: "Retry"
+
+# The reader must not be trapped in the error state — the book itself is local
+# and should still be readable with the backend down.
+- tapOn:
+    text: "Dismiss"
+    optional: true
+- assertVisible: "Table of contents"

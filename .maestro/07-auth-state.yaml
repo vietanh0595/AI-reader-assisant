@@ -1,0 +1,44 @@
+# Signing out leaves a working guest app, not a broken one.
+#
+# PRECONDITION: starts signed in.
+#
+# Scope note: signing back IN is deliberately not automated. It goes through
+# Auth0's hosted web sheet (and Apple's system sheet for Sign in with Apple),
+# neither of which Maestro can drive reliably. Sign-in stays on the manual
+# checklist.
+#
+# What this DOES cover is the more dangerous direction. The guest path is the
+# whole onboarding story — the sample book is meant to work with no account —
+# and a sign-out that leaves the reader in a half-authenticated state breaks
+# first impressions for every new user. The backlog also records a real bug of
+# this shape: delete silently failing when signed out instead of prompting.
+appId: com.vietanh.aibookreader
+---
+- launchApp
+
+- extendedWaitUntil:
+    visible: "Sign out"
+    timeout: 20000
+
+- tapOn: "Sign out"
+
+# Sign-out may confirm first; accept either shape rather than assuming.
+- tapOn:
+    text: "Sign out"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 15000
+
+# The guest experience must still work. Summarize is guest-open and needs no
+# text selection, so it is the cheapest proof the core loop survived sign-out.
+- assertVisible: "Summarize current page"
+- tapOn: "Summarize current page"
+
+- extendedWaitUntil:
+    visible: "Summary"
+    timeout: 60000
+
+# Signed-out users must be told to sign in, never hit a dead button.
+- assertNotVisible: "Sign out"

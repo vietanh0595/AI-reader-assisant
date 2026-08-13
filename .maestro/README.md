@@ -42,8 +42,27 @@ view hierarchy and what each element is matchable by.
 | `02-summarize-page` | nothing | full AI round-trip: app → backend → OpenAI → answer card |
 | `03-ask-the-book` | signed in + indexed book | agentic ask, conversation history, follow-up turns |
 | `04-save-and-export-notes` | nothing | note persistence + export reachability |
+| `05-reading-position-persists` | nothing | position survives a full restart (guards the persistence layer) |
+| `06-clear-conversation` | signed in + indexed book | clear **archives** rather than deletes; reopen restores |
+| `07-auth-state` | starts signed in | sign-out leaves a working guest app |
+| `08-backend-failure` | **build pointed at a dead URL** | fails loudly — named error + Retry, never a silent hang |
+| `09-mind-map` | signed in + map already generated | opens, renders, chapter drill-down and back |
 
 Run `01` first. If it fails, nothing else is worth running.
+
+**Status: 01-04 have been exercised; 05-09 pass syntax validation but have not yet
+been run against a real build.** Expect to fix a few selectors on first run —
+`maestro studio` is the fast way to do that.
+
+Two flows need a specially-built app rather than the normal one:
+
+- `08-backend-failure` needs a build whose API URL points nowhere:
+  `EXPO_PUBLIC_API_BASE_URL=https://127.0.0.1:9 npx expo run:ios`. The URL is
+  baked in at build time, so this cannot be faked at runtime — and this flow
+  will correctly fail against a healthy build.
+- `09-mind-map` deliberately does not trigger generation. That is a multi-minute
+  background job fanning out expensive `gpt-4o` calls; it belongs in backend
+  tests and the manual checklist, not a UI loop.
 
 ## Known limitation: text selection is inside a WebView
 
