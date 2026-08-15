@@ -2,6 +2,17 @@
 #
 # PRECONDITION: starts signed in.
 #
+# DESTRUCTIVE — tagged so the normal suite run skips it. Signing out is the
+# point of the flow, but it poisons every later flow that needs an account
+# (03, 06, 09). Maestro's execution order across a folder is not something to
+# rely on, so "just name it last" is not a fix. Run it deliberately:
+#
+#   maestro test .maestro/07-auth-state.yaml
+#
+# then sign back in by hand (Auth0's hosted sheet cannot be automated).
+tags:
+  - destructive
+#
 # Scope note: signing back IN is deliberately not automated. It goes through
 # Auth0's hosted web sheet (and Apple's system sheet for Sign in with Apple),
 # neither of which Maestro can drive reliably. Sign-in stays on the manual

@@ -6,6 +6,13 @@
 # The URL is baked in at build time, so Maestro cannot fake this at runtime and
 # this flow will (correctly) fail against a healthy build.
 #
+# Tagged `destructive` for that reason — not because it damages state, but
+# because it needs a different binary than every other flow. Left in the normal
+# suite it produces a permanent red that trains you to ignore failures, which
+# is worse than not having the test.
+tags:
+  - destructive
+#
 # Why this matters more than it looks: the failure mode that actually hurt this
 # app was silence. The Anki export dropped every highlight with no alert and no
 # error for two runs before anyone noticed; the Render restart was discovered by

@@ -31,14 +31,21 @@ maestro test .maestro/06-clear-conversation.yaml    # a single flow
 maestro studio                                      # interactive selector inspector
 ```
 
-> **Always pass `--exclude-tags=destructive` when running the folder.**
-> `01-smoke-launch` is tagged `destructive` because it launches with
-> `clearState: true`, which wipes imported books, saved notes, and your
-> sign-in. Without the flag it runs first (alphabetically) and deletes the
-> setup every other flow depends on. Naming a single file explicitly always
-> runs it, tags or not.
+> **Always pass `--exclude-tags=destructive,setup` when running the folder.**
+> Three flows are tagged `destructive` and must be run one at a time:
 >
-> Run `01` deliberately, on its own, **before** setting up test data.
+> - `01-smoke-launch` — `clearState: true` wipes imported books, saved notes
+>   and your sign-in. Run it deliberately **before** setting up test data.
+> - `07-auth-state` — signing out is the point, but it poisons `03`, `06` and
+>   `09`, which need an account. Run it, then sign back in by hand.
+> - `08-backend-failure` — needs a build pointed at a dead URL, so it is a
+>   permanent red in a normal run. A test that always fails trains you to
+>   ignore failures, which is worse than not having it.
+>
+> `setup-enable-whole-book-ai` is tagged `setup`: it triggers a one-time,
+> paid indexing job, not a test.
+>
+> Naming a single file explicitly always runs it, tags or not.
 
 `maestro studio` is the fastest way to fix a broken selector — it shows the live
 view hierarchy and what each element is matchable by.
