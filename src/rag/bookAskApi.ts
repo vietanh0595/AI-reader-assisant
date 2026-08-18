@@ -1,3 +1,4 @@
+import { fetchWithRetry } from '../api/fetchWithRetry';
 import type { BookAskRequest, BookAskResponse } from './bookAskTypes';
 
 type ApiClient = {
@@ -51,6 +52,8 @@ export type RequestBookAskArgs = {
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
+const BOOK_ASK_TIMEOUT_MS = 90_000;
+
 export async function requestBookAsk(
   args: RequestBookAskArgs,
   fetchImpl: FetchLike = fetch,
@@ -71,23 +74,29 @@ export async function requestBookAsk(
 
   const url = `${apiBaseUrl}/library/books/${cloudBookId}/ask`;
 
-  const response = await fetchImpl(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
+  // The agentic ask can run up to three retrieval rounds, so it gets a longer
+  // ceiling than a single-shot call before we call it lost.
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        question,
+        currentParagraphId,
+        currentReadingOrder,
+        includeWholeBook,
+        allowGeneralKnowledge,
+        history,
+        selectedText,
+        quotedAnswer,
+      }),
     },
-    body: JSON.stringify({
-      question,
-      currentParagraphId,
-      currentReadingOrder,
-      includeWholeBook,
-      allowGeneralKnowledge,
-      history,
-      selectedText,
-      quotedAnswer,
-    }),
-  });
+    { fetchImpl: fetchImpl as unknown as typeof fetch, timeoutMs: BOOK_ASK_TIMEOUT_MS },
+  );
 
   if (!response.ok) {
     throw new Error(`Book ask failed with status ${response.status}.`);

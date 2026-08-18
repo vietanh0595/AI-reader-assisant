@@ -50,6 +50,7 @@ import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
 import { resolveMindMapBookId, shouldStartMindMapGeneration } from './src/rag/mindmapTarget';
 import type { MindMapData, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
+import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
 import { createIndexApi } from './src/rag/indexApi';
@@ -400,6 +401,9 @@ const summarySelectionText = 'Visible page summary';
 const ocrImageMaxDimension = 2200;
 const ocrImageCompression = 0.7;
 const ocrRequestTimeoutMs = 75_000;
+// A single-shot assist call; long enough for a slow model, short enough that a
+// lost request surfaces as an error rather than an endless spinner.
+const assistRequestTimeoutMs = 45_000;
 
 const sampleParagraphs: Paragraph[] = [
   {
@@ -1870,13 +1874,17 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
   let response: Response;
 
   try {
-    response = await fetch(assistUrl, {
-      body: JSON.stringify(payload),
-      headers: {
-        'Content-Type': 'application/json',
+    response = await fetchWithRetry(
+      assistUrl,
+      {
+        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
       },
-      method: 'POST',
-    });
+      { timeoutMs: assistRequestTimeoutMs },
+    );
   } catch (error) {
     throw new Error(`Could not reach ${assistUrl}. ${getErrorMessage(error)}`);
   }

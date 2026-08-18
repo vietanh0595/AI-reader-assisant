@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './fetchWithRetry';
+
 export type TokenGetter = (forceRefresh?: boolean) => Promise<string | null>;
 export type JsonRequestInit = Omit<RequestInit, 'body'> & { body?: unknown };
 
@@ -71,7 +73,9 @@ export function createApiClient(
       const headers = new Headers(init.headers);
       headers.set('Accept', 'application/json');
       headers.set('Authorization', `Bearer ${accessToken}`);
-      return fetchImpl(url, { ...init, headers });
+      // Same stale-keep-alive exposure as the AI endpoints: retry a request
+      // that never reached the server, leave everything else alone.
+      return fetchWithRetry(url, { ...init, headers }, { fetchImpl });
     };
 
     let response = await performRequest(token);
