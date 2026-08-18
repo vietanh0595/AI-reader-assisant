@@ -107,3 +107,72 @@ def test_answer_includes_request_id():
     answerer = BookAnswerer(client=client, model="gpt-5-mini")
     result = answerer.answer(question="Why?", evidence=make_evidence(["source-1"]))
     assert result.request_id and len(result.request_id) > 0
+
+
+# --- Citation markers must never reach the reader -------------------------
+#
+# The model is told to put source IDs in the structured `citation_ids` field,
+# which becomes the SOURCES list under the card. It also inlines them into the
+# prose ("...rather than one definitive calculation [s0-1][s0-0]."), which
+# shipped to a real device on 2026-08-17. The prompt now forbids it; this
+# strips them anyway, because prompts leak and a regex does not.
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        # The exact shape seen on device.
+        (
+            "Valuation involves judgment [s0-1][s0-0].",
+            "Valuation involves judgment.",
+        ),
+        # The non-agentic answerer uses `source-N` ids.
+        ("Rates rise [source-1].", "Rates rise."),
+        # The current-context tool labels its results `[ctx0]`.
+        ("The page says this [ctx0].", "The page says this."),
+        # Mid-sentence, and with the space that would otherwise double up.
+        (
+            "First [s0-0] and second [s1-2] both matter.",
+            "First and second both matter.",
+        ),
+        # A marker owning a whole bullet leaves no ragged blank line.
+        (
+            "- Point one [s0-1].\n- Point two [s0-2].",
+            "- Point one.\n- Point two.",
+        ),
+        # Markers before other punctuation.
+        ("It follows [s0-1], and then stops.", "It follows, and then stops."),
+        # Nothing to strip is left exactly alone.
+        ("A clean answer with no markers.", "A clean answer with no markers."),
+        # Real bracketed prose must survive — this is not a citation.
+        ("He used [sic] in the quote.", "He used [sic] in the quote."),
+        ("See [Chapter 3] for more.", "See [Chapter 3] for more."),
+        # A marker opening a line leaves no leading space behind.
+        ("[s0-1] The point stands.", "The point stands."),
+        # Only whitespace a marker displaced is touched. An earlier version
+        # scrubbed every space-before-punctuation and broke this exact string.
+        (
+            "From general knowledge: ... and the ratio ( P/E ) matters.",
+            "From general knowledge: ... and the ratio ( P/E ) matters.",
+        ),
+    ],
+)
+def test_strip_citation_markers(body, expected):
+    from backend.app.retrieval.answerer import strip_citation_markers
+
+    assert strip_citation_markers(body) == expected
+
+
+def test_answer_body_has_citation_markers_stripped():
+    client = fake_client(body="Valuation involves judgment [s0-1][source-1].")
+    answerer = BookAnswerer(client=client, model="gpt-5-mini")
+    result = answerer.answer(question="Why?", evidence=make_evidence(["source-1"]))
+    assert result.body == "Valuation involves judgment."
+
+
+def test_stripping_does_not_disturb_the_citation_list():
+    """Markers leave the prose; the SOURCES list is built from citation_ids and stays."""
+    client = fake_client(body="Grounded claim [source-1].", citation_ids=["source-1"])
+    answerer = BookAnswerer(client=client, model="gpt-5-mini")
+    result = answerer.answer(question="Why?", evidence=make_evidence(["source-1"]))
+    assert [s.id for s in result.sources] == ["source-1"]

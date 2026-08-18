@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any, Optional
 
@@ -15,6 +16,34 @@ _INSUFFICIENT_EVIDENCE_EYEBROW = "Insufficient evidence"
 _INSUFFICIENT_EVIDENCE_BODY = (
     "The retrieved excerpts do not contain enough information to answer this question."
 )
+
+# Evidence is fed to the model as bracketed labels — "[s0-1]" (agent rounds),
+# "[source-1]" (single-shot answerer), "[ctx0]" (current-page tool). Those IDs
+# belong in the structured citation_ids field, which renders as the SOURCES
+# list. Models inline them into the prose as well; the prompts now forbid it,
+# and this removes any that survive. Narrow by construction: only these three
+# shapes match, so real bracketed prose ("[sic]", "[Chapter 3]") is untouched.
+#
+# Whitespace on both sides is captured so the gap can be closed correctly. Only
+# the space a marker actually displaced is touched — an earlier version scrubbed
+# every space-before-punctuation in the body and mangled "knowledge: ...".
+_CITATION_RUN = re.compile(
+    r"([ \t]*)((?:\[(?:s\d+-\d+|source-\d+|ctx\d+)\])+)([ \t]*)"
+)
+
+
+def _close_gap(match: "re.Match[str]") -> str:
+    lead, _, trail = match.groups()
+    # Space on both sides means the marker sat between two words, so one space
+    # has to stay. Otherwise it hugged punctuation or a line edge, and the text
+    # should close up as if it had never been written.
+    return " " if lead and trail else ""
+
+
+def strip_citation_markers(body: str) -> str:
+    """Remove inline evidence labels from answer prose, closing the gaps they leave."""
+    cleaned = _CITATION_RUN.sub(_close_gap, body)
+    return "\n".join(line.rstrip() for line in cleaned.split("\n")).strip()
 
 
 class ModelBookAnswer(BaseModel):
@@ -91,7 +120,7 @@ class BookAnswerer:
         return BookAnswer(
             request_id=request_id,
             eyebrow=parsed.eyebrow,
-            body=parsed.body,
+            body=strip_citation_markers(parsed.body),
             supported=True,
             sources=sources,
         )

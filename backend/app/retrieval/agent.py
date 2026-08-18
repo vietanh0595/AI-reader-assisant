@@ -9,6 +9,7 @@ from uuid import UUID
 
 from .answerer import (
     ModelBookAnswer,
+    strip_citation_markers,
     _build_sources,
     _INSUFFICIENT_EVIDENCE_BODY,
     _INSUFFICIENT_EVIDENCE_EYEBROW,
@@ -42,6 +43,10 @@ evidence does not support an answer. Every tool result is labeled with a bracket
 ID, e.g. "[s0-2] ..." or "[ctx0] ..." — cite only IDs that appeared in a tool result this
 turn. Cite at most 3. Keep the body under 1800 characters.
 
+Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
+"[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
+labels are meaningless to them; the app renders citation_ids as a sources list.
+
 Formatting: write the body in clean Markdown, restricted to:
 - Short paragraphs (1-3 sentences).
 - "- " bullet lists for parallel or enumerated items.
@@ -66,6 +71,9 @@ Guidelines:
 - If the book has nothing relevant, you may still answer from general knowledge —
   say so plainly. In that case set supported=true with no citations.
 - Cite book source IDs only for claims drawn from the book. Cite at most 3.
+- Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
+  "[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
+  labels are meaningless to them; the app renders citation_ids as a sources list.
 - Keep the body under 1800 characters.
 
 Formatting: write the body in clean Markdown, restricted to:
@@ -245,5 +253,6 @@ class BookAgent:
         if not sources and not allow_general_knowledge:
             return BookAnswer(request_id=request_id, eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
                               body=_INSUFFICIENT_EVIDENCE_BODY, supported=False, sources=[])
-        return BookAnswer(request_id=request_id, eyebrow=parsed.eyebrow, body=parsed.body,
+        return BookAnswer(request_id=request_id, eyebrow=parsed.eyebrow,
+                          body=strip_citation_markers(parsed.body),
                           supported=True, sources=sources)
