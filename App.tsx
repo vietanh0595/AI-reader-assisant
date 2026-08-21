@@ -2758,7 +2758,6 @@ function ReaderApp() {
     setEditingNoteText('');
     setQuestion('');
     setBookAskSources([]);
-    setIncludeWholeBook(false);
     setAskContextScope('selection');
     setLastAskRequest(null);
   }
@@ -2787,6 +2786,11 @@ function ReaderApp() {
     }
 
     clearSelection();
+    // Whole-book scope is per-book — it needs that book indexed — so switching
+    // books drops it. It deliberately does NOT reset on clearSelection(), which
+    // fires on every new long-press in the reader: a scope the reader chose must
+    // survive them using a quick action.
+    setIncludeWholeBook(false);
     setIsThreadOpen(false);
     setIsThreadCollapsed(false);
     setIsTocOpen(false);
@@ -2869,6 +2873,7 @@ function ReaderApp() {
       activeBookId === bookId ? remainingItems[0] ?? sampleLibraryItem : getActiveLibraryItem(remainingItems, activeBookId);
 
     clearSelection();
+    setIncludeWholeBook(false);
     setLibraryItems(remainingItems);
     setActiveBookId(nextActiveItem.id);
 
@@ -3473,6 +3478,7 @@ function ReaderApp() {
         : toReaderBook(await parseEpubAsset(asset));
       const importedItem = createLibraryItem(importedBook);
       clearSelection();
+      setIncludeWholeBook(false);
       setLibraryItems((currentItems) => [importedItem, ...currentItems]);
       setActiveBookId(importedItem.id);
       setIsLibraryOpen(false);
@@ -3556,6 +3562,7 @@ function ReaderApp() {
 
       const scannedItem = createLibraryItem(scannedBook);
       clearSelection();
+      setIncludeWholeBook(false);
       setLibraryItems((currentItems) => [scannedItem, ...currentItems]);
       setActiveBookId(scannedItem.id);
       setIsLibraryOpen(false);
