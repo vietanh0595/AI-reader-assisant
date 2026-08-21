@@ -413,6 +413,14 @@ export function ConversationThread({
           placeholderTextColor="#a8a298"
           onSubmitEditing={handleSubmit}
           returnKeyType="send"
+          // A long question used to scroll sideways out of view, hiding its own
+          // opening words so the reader could not check what they were sending.
+          // It wraps and the box grows instead, up to styles.input's maxHeight.
+          multiline
+          // multiline normally turns Return into a newline. blurOnSubmit keeps
+          // Return as send, which is how this composer has always behaved —
+          // wrapping was the ask, not a change to how questions are sent.
+          blurOnSubmit
         />
         <Pressable
           accessibilityRole="button"
@@ -710,7 +718,9 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // flex-end, not center: as the input grows the send button stays beside the
+    // last line instead of floating to the middle of a tall box.
+    alignItems: 'flex-end',
     gap: 10,
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -728,6 +738,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     fontSize: 14,
     color: '#171715',
+    // Roughly five wrapped lines. Past that the box scrolls internally rather
+    // than eating the conversation above it, which is the thing the reader is
+    // usually writing about.
+    maxHeight: 120,
+    // Android centres multiline text in the box by default; the web and iOS
+    // behaviour of starting at the top is what reads correctly as it grows.
+    textAlignVertical: 'top',
   },
   send: {
     width: 40,
