@@ -50,6 +50,9 @@ import { generateMindMap, getMindMap } from './src/rag/mindmapApi';
 import { resolveMindMapBookId, shouldStartMindMapGeneration } from './src/rag/mindmapTarget';
 import type { MindMapData, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
+import { describeRequestFailure } from './src/api/describeRequestFailure';
+import { ErrorInsightCard } from './src/components/ErrorInsightCard';
+import { isWholeBookScopeOn } from './src/library/wholeBookScope';
 import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -262,6 +265,9 @@ type LibraryItem = {
   id: string;
   importedAt: string;
   lastOpenedAt: string;
+  // "Whole book" scope for the Ask thread. Stored per book rather than in component
+  // state so it survives a force-quit, and so each book keeps its own answer.
+  includeWholeBook?: boolean;
   mindMapJob?: { status: 'generating' | 'ready' | 'failed' };
   pendingNotice?: PersistedPendingNotice;
   readingLocation: ReadingLocation | null;
@@ -1886,7 +1892,11 @@ async function requestAssist(payload: AssistRequestPayload): Promise<Insight> {
       { timeoutMs: assistRequestTimeoutMs },
     );
   } catch (error) {
-    throw new Error(`Could not reach ${assistUrl}. ${getErrorMessage(error)}`);
+    // The endpoint used to be pasted into this message and ended up on the reader's
+    // error card. describeRequestFailure() turns it into something they can act on;
+    // the URL stays in the console log, where it is actually useful.
+    console.warn(`Assist request to ${assistUrl} failed`, error);
+    throw new Error(describeRequestFailure(error));
   }
 
   if (!response.ok) {
@@ -1930,7 +1940,11 @@ async function requestOcr(payload: OcrRequestPayload, token: string): Promise<Oc
       throw new Error('This scan took too long. The current page was not changed. Try a closer, flatter capture.');
     }
 
-    throw new Error(`The scan failed and the current page was not changed. Could not reach ${ocrUrl}. ${getErrorMessage(error)}`);
+    // Same reasoning as requestAssist: the endpoint goes to the log, not the reader.
+    console.warn(`OCR request to ${ocrUrl} failed`, error);
+    throw new Error(
+      `The scan failed and the current page was not changed. ${describeRequestFailure(error)}`,
+    );
   } finally {
     clearTimeout(timeout);
   }
@@ -2609,13 +2623,22 @@ function ReaderApp() {
   const [isAssistLoading, setIsAssistLoading] = useState(false);
   const [assistError, setAssistError] = useState<string | null>(null);
   const [pendingRetry, setPendingRetry] = useState<{ questionText: string; ctx?: { quotedText: string; quotedTurnId?: string } } | null>(null);
+  // The chat sheet has always had a Retry; the quick-action card showed the error and
+  // nothing to press. runAssistForSelection() already receives every argument a retry
+  // needs, so a failure just keeps them — the replay is then exactly the request that
+  // failed, scope and all, rather than a guess reassembled from current state.
+  const [pendingAssistRetry, setPendingAssistRetry] = useState<{
+    assistSelection: ReaderSelection;
+    action: InsightAction;
+    questionText?: string;
+    contextScope: AssistContextScope;
+  } | null>(null);
   const [copiedSelectionId, setCopiedSelectionId] = useState<string | null>(null);
   const [highlightedSelectionId, setHighlightedSelectionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [bookAskSources, setBookAskSources] = useState<BookSource[]>([]);
   const [isThreadOpen, setIsThreadOpen] = useState(false);
   const [isThreadCollapsed, setIsThreadCollapsed] = useState(false);
-  const [includeWholeBook, setIncludeWholeBook] = useState(false);
   const [askContextScope, setAskContextScope] = useState<AskContextScope>('selection');
   const [lastAskRequest, setLastAskRequest] = useState<LastAskRequest | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2678,6 +2701,16 @@ function ReaderApp() {
     [activeBookId, libraryItems],
   );
   const pendingNotice = selectPendingNotice(libraryItems);
+  // Read from the active book rather than held in state: the choice is a property of
+  // the book, so it persists across relaunches and follows the reader between books
+  // without a reset at every book-change site.
+  const includeWholeBook = isWholeBookScopeOn(activeLibraryItem);
+
+  function setWholeBookScope(bookId: string, on: boolean) {
+    setLibraryItems((items) =>
+      items.map((item) => (item.id === bookId ? { ...item, includeWholeBook: on } : item)),
+    );
+  }
 
   // wholeBookAi.status is a per-book flag persisted locally — it stays 'ready' after
   // the indexing that set it, even across a later sign-out. Signing out doesn't reset
@@ -2750,6 +2783,7 @@ function ReaderApp() {
     setSelectedAction(null);
     setInsight(null);
     setAssistError(null);
+    setPendingAssistRetry(null);
     setIsAssistLoading(false);
     setCopiedSelectionId(null);
     setIsAskOpen(false);
@@ -2786,11 +2820,6 @@ function ReaderApp() {
     }
 
     clearSelection();
-    // Whole-book scope is per-book — it needs that book indexed — so switching
-    // books drops it. It deliberately does NOT reset on clearSelection(), which
-    // fires on every new long-press in the reader: a scope the reader chose must
-    // survive them using a quick action.
-    setIncludeWholeBook(false);
     setIsThreadOpen(false);
     setIsThreadCollapsed(false);
     setIsTocOpen(false);
@@ -2873,7 +2902,6 @@ function ReaderApp() {
       activeBookId === bookId ? remainingItems[0] ?? sampleLibraryItem : getActiveLibraryItem(remainingItems, activeBookId);
 
     clearSelection();
-    setIncludeWholeBook(false);
     setLibraryItems(remainingItems);
     setActiveBookId(nextActiveItem.id);
 
@@ -2947,6 +2975,7 @@ function ReaderApp() {
     setSelectedAction(null);
     setInsight(null);
     setAssistError(null);
+    setPendingAssistRetry(null);
     setIsAssistLoading(false);
     setCopiedSelectionId(null);
     setIsAskOpen(false);
@@ -3478,7 +3507,6 @@ function ReaderApp() {
         : toReaderBook(await parseEpubAsset(asset));
       const importedItem = createLibraryItem(importedBook);
       clearSelection();
-      setIncludeWholeBook(false);
       setLibraryItems((currentItems) => [importedItem, ...currentItems]);
       setActiveBookId(importedItem.id);
       setIsLibraryOpen(false);
@@ -3562,7 +3590,6 @@ function ReaderApp() {
 
       const scannedItem = createLibraryItem(scannedBook);
       clearSelection();
-      setIncludeWholeBook(false);
       setLibraryItems((currentItems) => [scannedItem, ...currentItems]);
       setActiveBookId(scannedItem.id);
       setIsLibraryOpen(false);
@@ -3585,6 +3612,8 @@ function ReaderApp() {
 
     if (!summarySelection) {
       setAssistError('There is no readable page context to summarize.');
+      // Not a failed request — there is nothing to replay, so no Retry.
+      setPendingAssistRetry(null);
       return;
     }
 
@@ -3665,6 +3694,7 @@ function ReaderApp() {
     setInsight(null);
     setBookAskSources([]);
     setAssistError(null);
+    setPendingAssistRetry(null);
     setIsAssistLoading(true);
 
     try {
@@ -3704,13 +3734,22 @@ function ReaderApp() {
       }
     } catch (error) {
       if (assistRequestId.current === requestId) {
-        setAssistError(getErrorMessage(error));
+        setAssistError(describeRequestFailure(error));
+        setPendingAssistRetry({ assistSelection, action, questionText, contextScope });
       }
     } finally {
       if (assistRequestId.current === requestId) {
         setIsAssistLoading(false);
       }
     }
+  }
+
+  function retryAssist() {
+    if (!pendingAssistRetry) {
+      return;
+    }
+    const { assistSelection, action, questionText, contextScope } = pendingAssistRetry;
+    void runAssistForSelection(assistSelection, action, questionText, contextScope);
   }
 
   function saveInsight() {
@@ -3983,6 +4022,7 @@ function ReaderApp() {
 
     if (!cloudBookId) {
       setAssistError('Whole-Book AI is not enabled for this book.');
+      setPendingAssistRetry(null);
       return;
     }
 
@@ -3992,6 +4032,7 @@ function ReaderApp() {
       // Surface it in the thread, and open sign-in so the user can re-authenticate
       // (the session likely expired). Closing the thread keeps sign-in visible.
       setAssistError('Your sign-in has expired. Please sign in again to ask the book.');
+      setPendingAssistRetry(null);
       setIsThreadOpen(false);
       setIsSignInOpen(true);
       return;
@@ -4006,6 +4047,7 @@ function ReaderApp() {
     setInsight(null);
     setAssistError(null);
     setPendingRetry(null);
+    setPendingAssistRetry(null);
     setIsAssistLoading(true);
 
     // Show the user turn immediately before waiting for the API.
@@ -4048,7 +4090,7 @@ function ReaderApp() {
       }
     } catch (error) {
       if (assistRequestId.current === requestId) {
-        setAssistError(getErrorMessage(error));
+        setAssistError(describeRequestFailure(error));
         setPendingRetry({ questionText, ctx });
       }
     } finally {
@@ -4421,6 +4463,7 @@ function ReaderApp() {
                   onChooseAction={chooseAction}
                   onExample={showExample}
                   onMakeSimpler={() => void runAssist('simpler')}
+                  onRetry={pendingAssistRetry ? retryAssist : undefined}
                   onSave={saveInsight}
                   selectionKind={selection.selectionKind}
                   sources={bookAskSources}
@@ -4448,6 +4491,7 @@ function ReaderApp() {
                   onAskMore={openConversationThread}
                   onExample={showExample}
                   onMakeSimpler={() => void runContextAssist('simpler')}
+                  onRetry={pendingAssistRetry ? retryAssist : undefined}
                   onSave={saveInsight}
                   sources={bookAskSources}
                   onNavigateSource={navigateToSource}
@@ -4477,7 +4521,7 @@ function ReaderApp() {
                           const { questionText, ctx } = pendingRetry;
                           void runBookAsk(questionText, ctx, { skipUserTurn: true });
                         } : undefined}
-                        onToggleWholeBook={() => setIncludeWholeBook((value) => !value)}
+                        onToggleWholeBook={() => setWholeBookScope(activeLibraryItem.id, !includeWholeBook)}
                         onClear={clearConversation}
                         onNavigateSource={navigateToSource}
                         onClearSelection={clearContextChip}
@@ -4672,11 +4716,10 @@ function ReaderApp() {
             if (targetItem && canUseWholeBookAi(targetItem)) {
               // Mind-map-driven questions are about concepts from anywhere in the
               // book, not just what's been read so far — default the thread to
-              // whole-book scope. openLibraryItem() above already reset it to
-              // false, so this must come after. Stays on for the rest of the
-              // thread (including follow-ups typed manually) until the user
-              // toggles it off themselves.
-              setIncludeWholeBook(true);
+              // whole-book scope. Stays on for the rest of the thread (including
+              // follow-ups typed manually) until the user toggles it off, and now
+              // sticks to the book itself rather than to this session.
+              setWholeBookScope(mindMapBookId, true);
               setAssistError(null);
               setIsAskOpen(false);
               setIsThreadCollapsed(false);
@@ -4691,9 +4734,8 @@ function ReaderApp() {
             setMindMapReturnBookId(mindMapBookId);
             closeMindMap();
             openLibraryItem(mindMapBookId);
-            // See the onAsk handler above for why this must come after
-            // openLibraryItem() and why it's sticky for the whole thread.
-            setIncludeWholeBook(true);
+            // See the onAsk handler above for why this is sticky for the thread.
+            setWholeBookScope(mindMapBookId, true);
             setPendingQuickAsk({ bookId: mindMapBookId, question, allowGeneralKnowledge });
           }}
         />
@@ -5962,6 +6004,7 @@ function SelectionPanel({
   onChooseAction,
   onExample,
   onMakeSimpler,
+  onRetry,
   onSave,
   selectionKind,
   sources,
@@ -5978,6 +6021,7 @@ function SelectionPanel({
   onChooseAction: (action: SelectionAction) => void;
   onExample: () => void;
   onMakeSimpler: () => void;
+  onRetry?: () => void;
   onSave: () => void;
   selectionKind: SelectionKind;
   sources?: BookSource[];
@@ -5995,7 +6039,9 @@ function SelectionPanel({
 
       {isLoading ? <LoadingInsightCard /> : null}
 
-      {errorMessage && !isLoading ? <ErrorInsightCard message={errorMessage} /> : null}
+      {errorMessage && !isLoading ? (
+        <ErrorInsightCard message={errorMessage} onRetry={onRetry} />
+      ) : null}
 
       {insight && !isLoading ? (
         <InsightCard
@@ -6021,6 +6067,7 @@ function ContextInsightPanel({
   onAskMore,
   onExample,
   onMakeSimpler,
+  onRetry,
   onSave,
   sources,
   onNavigateSource,
@@ -6032,6 +6079,7 @@ function ContextInsightPanel({
   onAskMore: () => void;
   onExample: () => void;
   onMakeSimpler: () => void;
+  onRetry?: () => void;
   onSave: () => void;
   sources?: BookSource[];
   onNavigateSource?: (paragraphId: string) => void;
@@ -6040,7 +6088,9 @@ function ContextInsightPanel({
     <Pressable accessible={false} onPress={stopPressPropagation} style={styles.selectionPanel}>
       {isLoading ? <LoadingInsightCard /> : null}
 
-      {errorMessage && !isLoading ? <ErrorInsightCard message={errorMessage} /> : null}
+      {errorMessage && !isLoading ? (
+        <ErrorInsightCard message={errorMessage} onRetry={onRetry} />
+      ) : null}
 
       {insight && !isLoading ? (
         <InsightCard
@@ -6123,18 +6173,6 @@ function LoadingInsightCard() {
         <Text style={styles.insightEyebrow}>Thinking</Text>
       </View>
       <Text style={styles.insightBody}>Reading the selected passage...</Text>
-    </View>
-  );
-}
-
-function ErrorInsightCard({ message }: { message: string }) {
-  return (
-    <View style={[styles.insightCard, styles.errorCard]}>
-      <View style={styles.insightHeader}>
-        <HelpCircle color={colors.error} size={17} strokeWidth={2} />
-        <Text style={[styles.insightEyebrow, styles.errorText]}>AI unavailable</Text>
-      </View>
-      <Text style={[styles.insightBody, styles.errorText]}>{message}</Text>
     </View>
   );
 }
@@ -6717,10 +6755,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
-  errorCard: {
-    backgroundColor: colors.errorBackground,
-    borderColor: colors.errorBorder,
-  },
   insightHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -6767,9 +6801,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     marginTop: 12,
     paddingTop: 12,
-  },
-  errorText: {
-    color: colors.error,
   },
   insightActions: {
     flexDirection: 'row',
