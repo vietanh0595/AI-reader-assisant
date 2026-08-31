@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AI Book Reader",
+    "name": "BookSense AI",
     "slug": "ai-book-reader",
     "version": "1.0.0",
     "scheme": "aibookreader",
@@ -18,7 +18,7 @@
       "bundleIdentifier": "com.vietanh.aibookreader",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "AI Book Reader uses the camera to scan book and document pages for OCR.",
+        "NSCameraUsageDescription": "BookSense AI uses the camera to scan book and document pages for OCR.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
