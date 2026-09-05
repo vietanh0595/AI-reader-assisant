@@ -52,6 +52,8 @@ import type { MindMapData, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
 import { describeRequestFailure } from './src/api/describeRequestFailure';
 import { ErrorInsightCard } from './src/components/ErrorInsightCard';
+import { buildDeleteBookPrompt } from './src/library/deleteBookPrompt';
+import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
 import { isWholeBookScopeOn } from './src/library/wholeBookScope';
 import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
@@ -2843,6 +2845,27 @@ function ReaderApp() {
     }
   }
 
+  // Deleting is instant, permanent, and takes the reader's own notes and highlights
+  // with it, so it asks first and names what is about to be lost.
+  function confirmDeleteLibraryItem(bookId: string) {
+    const itemToDelete = libraryItems.find((item) => item.id === bookId);
+
+    if (!itemToDelete || itemToDelete.book.source === 'sample' || libraryItems.length <= 1) {
+      return;
+    }
+
+    const prompt = buildDeleteBookPrompt(itemToDelete);
+
+    Alert.alert(prompt.title, prompt.message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: prompt.confirmLabel,
+        style: 'destructive',
+        onPress: () => { void deleteLibraryItem(bookId); },
+      },
+    ]);
+  }
+
   async function deleteLibraryItem(bookId: string) {
     const itemToDelete = libraryItems.find((item) => item.id === bookId);
 
@@ -2892,6 +2915,11 @@ function ReaderApp() {
               ? { ...item, wholeBookAi: itemToDelete.wholeBookAi }
               : item,
           ),
+        );
+        // The spinner promised an outcome, so a silent revert would read as the app
+        // ignoring the tap. Say what happened and that the book is still there.
+        setImportError(
+          `Couldn't delete "${itemToDelete.book.title}". Check your connection and try again — the book is still here.`,
         );
         return;
       }
@@ -4415,7 +4443,7 @@ function ReaderApp() {
               isImportingBook={isImportingBook}
               isScanningDocument={isScanningDocument}
               items={libraryItems}
-              onDeleteBook={deleteLibraryItem}
+              onDeleteBook={confirmDeleteLibraryItem}
               onDismissError={() => setImportError(null)}
               onImportBook={importBook}
               onOpenBook={openLibraryItem}
@@ -4872,14 +4900,11 @@ function LibraryScreen({
                   </Text>
                 </View>
                 {canDelete ? (
-                  <Pressable
-                    accessibilityLabel={`Remove ${item.book.title}`}
-                    accessibilityRole="button"
+                  <LibraryDeleteButton
+                    bookTitle={item.book.title}
+                    isDeleting={item.wholeBookAi.status === 'deleting'}
                     onPress={() => onDeleteBook(item.id)}
-                    style={styles.libraryDeleteButton}
-                  >
-                    <Trash2 color={colors.mutedInk} size={18} strokeWidth={2} />
-                  </Pressable>
+                  />
                 ) : null}
               </View>
 
@@ -6466,12 +6491,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 17,
     marginTop: 2,
-  },
-  libraryDeleteButton: {
-    alignItems: 'center',
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
   },
   libraryBookMetaRow: {
     flexDirection: 'row',
