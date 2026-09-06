@@ -1,4 +1,5 @@
 import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import React, {
   createContext,
   type PropsWithChildren,
@@ -12,8 +13,10 @@ import React, {
 import { AppState } from 'react-native';
 
 import { getOidcClientConfig, type OidcClientConfig } from './config';
+import { buildLogoutUrl } from './logoutUrl';
 import {
   clearAuthSession,
+  clearHasEverSignedIn,
   readAuthSession,
   readHasEverSignedIn,
   writeAuthSession,
@@ -314,14 +317,48 @@ function ConfiguredAuthProvider({ children, config }: ConfiguredAuthProviderProp
   }, [config.clientId, discovery, promptAsync, redirectUri, request, updateSession]);
 
   const signOut = useCallback(async () => {
+    // Read the id token before the session goes, so the provider can be told which
+    // session to end.
+    const idToken = sessionRef.current?.idToken;
+
     mutationVersionRef.current += 1;
     updateSession(null);
     if (mountedRef.current) {
       setError(null);
       setDismissed(true);
+      setHasEverSignedIn(false);
     }
     await clearAuthSession();
-  }, [updateSession]);
+    // hasEverSignedIn is what turns a missing session into "your sign-in has expired",
+    // and it outlives the app while the dismissal above does not. Someone who signed
+    // out on purpose is a guest again, not a lapsed session — without this they are
+    // told on the next launch that their sign-in expired. They did not expire; they left.
+    // A session that lapses on its own never comes through here, so the notice still
+    // fires for the case it exists for.
+    await clearHasEverSignedIn();
+
+    // Local sign-out is done and stands on its own; ending the provider's session is
+    // best-effort on top of it. Clearing the tokens alone leaves the provider's cookie
+    // alive, so the next sign-in skips the login screen and offers to continue as the
+    // previous account — showing their email to whoever is now holding the phone.
+    const logoutUrl = buildLogoutUrl({
+      clientId: config.clientId,
+      endSessionEndpoint: discovery?.endSessionEndpoint,
+      idToken,
+      postLogoutRedirectUri: redirectUri,
+    });
+
+    if (!logoutUrl) {
+      return;
+    }
+
+    try {
+      await WebBrowser.openAuthSessionAsync(logoutUrl, redirectUri);
+    } catch {
+      // A browser that will not open must never leave the user looking signed in.
+      // The tokens are already gone; the provider's cookie simply outlives us.
+    }
+  }, [config.clientId, discovery?.endSessionEndpoint, redirectUri, updateSession]);
 
   const dismissSessionExpiredNotice = useCallback(() => {
     setDismissed(true);

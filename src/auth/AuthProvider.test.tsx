@@ -11,6 +11,12 @@ const mockExchangeCodeAsync = jest.fn();
 const mockRefreshAsync = jest.fn();
 const mockIsTokenFresh = jest.fn();
 const mockPromptAsync = jest.fn();
+const mockOpenAuthSessionAsync = jest.fn();
+
+jest.mock('expo-web-browser', () => ({
+  __esModule: true,
+  openAuthSessionAsync: mockOpenAuthSessionAsync,
+}));
 
 jest.mock('expo-auth-session', () => ({
   __esModule: true,
@@ -25,6 +31,7 @@ jest.mock('expo-auth-session', () => ({
 
 jest.mock('./tokenStore', () => ({
   clearAuthSession: jest.fn(),
+  clearHasEverSignedIn: jest.fn(),
   readAuthSession: jest.fn(),
   readHasEverSignedIn: jest.fn(),
   writeAuthSession: jest.fn(),
@@ -34,6 +41,7 @@ jest.mock('./tokenStore', () => ({
 const { AuthProvider, useAuth } = require('./AuthProvider') as typeof import('./AuthProvider');
 const {
   clearAuthSession,
+  clearHasEverSignedIn,
   readAuthSession,
   readHasEverSignedIn,
   writeAuthSession,
@@ -42,6 +50,7 @@ const {
 
 const tokenStore = {
   clear: jest.mocked(clearAuthSession),
+  clearHasEverSignedIn: jest.mocked(clearHasEverSignedIn),
   read: jest.mocked(readAuthSession),
   readHasEverSignedIn: jest.mocked(readHasEverSignedIn),
   write: jest.mocked(writeAuthSession),
@@ -50,6 +59,7 @@ const tokenStore = {
 
 const discovery = {
   authorizationEndpoint: 'https://issuer.example.com/authorize',
+  endSessionEndpoint: 'https://issuer.example.com/oidc/logout',
   tokenEndpoint: 'https://issuer.example.com/oauth/token',
 };
 
@@ -322,6 +332,88 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('error').props.children).toBe('null');
     });
     expect(tokenStore.clear).toHaveBeenCalledTimes(1);
+  });
+
+  test('a deliberate sign-out is not remembered as a lapsed session', async () => {
+    // hasEverSignedIn is what turns a missing session into "your sign-in has
+    // expired". It survives a relaunch, while the in-memory dismissal does not —
+    // so without clearing it, someone who chose to sign out is told on next launch
+    // that their session expired. They did not expire. They left.
+    tokenStore.read.mockResolvedValue(freshSession);
+    tokenStore.readHasEverSignedIn.mockResolvedValue(true);
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Sign out'));
+
+    await waitFor(() => expect(tokenStore.clearHasEverSignedIn).toHaveBeenCalledTimes(1));
+  });
+
+  test('a session that lapsed on its own is still reported as expired', async () => {
+    // The other half of the same rule: clearing the flag on a deliberate sign-out
+    // must not blunt the notice for a real expiry, which is the case it exists for.
+    mockPromptAsync.mockResolvedValue({ type: 'success', params: { code: 'authorization-code' } });
+    mockExchangeCodeAsync.mockResolvedValue({
+      accessToken: 'signed-in-access-token',
+      expiresIn: 3600,
+      issuedAt: 1_700_000_300,
+      refreshToken: 'signed-in-refresh-token',
+      tokenType: 'bearer',
+    });
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loading').props.children).toBe('false'));
+    await fireEvent.press(screen.getByText('Sign in'));
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    mockIsTokenFresh.mockReturnValue(false);
+    mockRefreshAsync.mockRejectedValue(new Error('refresh rejected'));
+    await fireEvent.press(screen.getByText('Get token'));
+
+    await waitFor(() => expect(screen.getByTestId('session-expired').props.children).toBe('true'));
+    expect(tokenStore.clearHasEverSignedIn).not.toHaveBeenCalled();
+  });
+
+  test('signing out ends the provider session, not just the local one', async () => {
+    // Clearing the tokens alone leaves the provider's cookie alive, so the next
+    // sign-in skips the login screen and offers to continue as the previous
+    // account — showing their email to whoever is now holding the phone.
+    tokenStore.read.mockResolvedValue({ ...freshSession, idToken: 'stored-id-token' });
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Sign out'));
+
+    await waitFor(() => expect(mockOpenAuthSessionAsync).toHaveBeenCalledTimes(1));
+    const openedUrl = new URL(mockOpenAuthSessionAsync.mock.calls[0][0]);
+    expect(openedUrl.origin + openedUrl.pathname).toBe('https://issuer.example.com/oidc/logout');
+    expect(openedUrl.searchParams.get('id_token_hint')).toBe('stored-id-token');
+    expect(openedUrl.searchParams.get('client_id')).toBe('mobile-client');
+  });
+
+  test('a provider with no logout endpoint still signs out locally', async () => {
+    mockUseAutoDiscovery.mockReturnValue({ ...discovery, endSessionEndpoint: undefined });
+    tokenStore.read.mockResolvedValue(freshSession);
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Sign out'));
+
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('false'));
+    expect(tokenStore.clear).toHaveBeenCalled();
+    expect(mockOpenAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  test('a browser that fails to open does not leave the user signed in', async () => {
+    // The local sign-out is the part that must never depend on the network.
+    mockOpenAuthSessionAsync.mockRejectedValue(new Error('no browser available'));
+    tokenStore.read.mockResolvedValue(freshSession);
+    const screen = await renderProvider();
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('true'));
+
+    await fireEvent.press(screen.getByText('Sign out'));
+
+    await waitFor(() => expect(screen.getByTestId('authenticated').props.children).toBe('false'));
+    expect(tokenStore.clear).toHaveBeenCalled();
   });
 
   test('signs out by clearing local state and storage', async () => {

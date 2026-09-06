@@ -22,7 +22,9 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       }
     },
     "android": {
@@ -41,6 +43,9 @@
         "projectId": "fa867445-ade7-4318-8667-38dca27a7f07"
       }
     },
-    "owner": "vietanh0495"
+    "owner": "vietanh0495",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
