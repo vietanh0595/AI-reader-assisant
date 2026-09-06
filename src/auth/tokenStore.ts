@@ -83,3 +83,7 @@ export async function readHasEverSignedIn(): Promise<boolean> {
 export async function writeHasEverSignedIn(): Promise<void> {
   await SecureStore.setItemAsync(HAS_SIGNED_IN_KEY, 'true');
 }
+
+export async function clearHasEverSignedIn(): Promise<void> {
+  await SecureStore.deleteItemAsync(HAS_SIGNED_IN_KEY);
+}

@@ -1,7 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
 
 import type { PersistedAuthSession } from './types';
-import { clearAuthSession, readAuthSession, readHasEverSignedIn, writeAuthSession, writeHasEverSignedIn } from './tokenStore';
+import {
+  clearAuthSession,
+  clearHasEverSignedIn,
+  readAuthSession,
+  readHasEverSignedIn,
+  writeAuthSession,
+  writeHasEverSignedIn,
+} from './tokenStore';
 
 jest.mock('expo-secure-store', () => ({
   deleteItemAsync: jest.fn(),
@@ -85,5 +92,12 @@ describe('tokenStore', () => {
     await writeHasEverSignedIn();
 
     expect(secureStore.setItemAsync).toHaveBeenCalledWith('ai-reader-has-signed-in', 'true');
+  });
+
+  test('clears hasEverSignedIn', async () => {
+    // Someone who signed out on purpose is a guest again, not a lapsed session.
+    await clearHasEverSignedIn();
+
+    expect(secureStore.deleteItemAsync).toHaveBeenCalledWith('ai-reader-has-signed-in');
   });
 });
