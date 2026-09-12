@@ -110,7 +110,7 @@ public final class ApplePDFImportModule: Module {
     let attributes = document.documentAttributes ?? [:]
     let fileTitle = url.deletingPathExtension().lastPathComponent
 
-    return [
+    var result: [String: Any] = [
       "author": normalizedText(attributes[PDFDocumentAttribute.authorAttribute] as? String ?? ""),
       "outline": outlineEntries(from: document),
       "pageCount": document.pageCount,
@@ -119,6 +119,43 @@ public final class ApplePDFImportModule: Module {
         ? fileTitle
         : normalizedText(attributes[PDFDocumentAttribute.titleAttribute] as? String ?? ""),
     ]
+
+    // Page one, rendered small, stands in for a cover the file does not carry. The
+    // import must never fail over artwork, so a nil result simply means the library
+    // draws a generated title card instead.
+    if let cover = coverImage(from: document) {
+      result["cover"] = cover
+    }
+
+    return result
+  }
+
+  /// Renders the first page as a small JPEG for use as a library cover.
+  ///
+  /// Deliberately capped at 600pt on the long edge: this is displayed at roughly
+  /// 46x66 points, so a full-resolution page render would cost megabytes per book
+  /// and cross the bridge as base64 for no visible gain.
+  private func coverImage(from document: PDFDocument) -> [String: Any]? {
+    guard let page = document.page(at: 0) else {
+      return nil
+    }
+
+    let pageSize = page.bounds(for: .cropBox).size
+
+    guard pageSize.width > 0, pageSize.height > 0 else {
+      return nil
+    }
+
+    let maxEdge: CGFloat = 600
+    let scale = min(maxEdge / max(pageSize.width, pageSize.height), 1)
+    let target = CGSize(width: pageSize.width * scale, height: pageSize.height * scale)
+    let thumbnail = page.thumbnail(of: target, for: .cropBox)
+
+    guard let data = thumbnail.jpegData(compressionQuality: 0.8) else {
+      return nil
+    }
+
+    return ["base64": data.base64EncodedString(), "mediaType": "image/jpeg"]
   }
 
   private var unitBounds: CGRect {

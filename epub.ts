@@ -3,6 +3,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { XMLParser } from 'fast-xml-parser';
 import JSZip from 'jszip';
 
+import { findEpubCoverPath } from './src/library/findEpubCover';
+
 type SelectionKind = 'word' | 'phrase' | 'paragraph';
 export type EpubBlockKind =
   | 'body'
@@ -35,6 +37,9 @@ export type EpubChapter = {
 export type ParsedEpubBook = {
   author: string;
   chapters: EpubChapter[];
+  // The book's own cover art, base64, ready to be written to disk by the caller.
+  // Absent when the file declares none — the library draws a title card instead.
+  cover?: { base64: string; mediaType: string };
   fileName: string;
   paragraphs: EpubParagraph[];
   title: string;
@@ -164,6 +169,7 @@ export async function parseEpubAsset(asset: DocumentPickerAsset): Promise<Parsed
   return {
     author,
     chapters,
+    cover: await readCoverImage(zip, packageNode, manifestItems),
     fileName: asset.name,
     paragraphs,
     title,
@@ -232,6 +238,50 @@ function parseXmlObject(xml: string): XmlObject {
 function readMetadataText(packageNode: XmlObject, key: 'creator' | 'title') {
   const metadata = getObject(packageNode.metadata);
   return cleanInlineText(readXmlText(firstItem(metadata?.[key]) ?? null));
+}
+
+function readMetaCoverId(packageNode: XmlObject): string | undefined {
+  const metadata = getObject(packageNode.metadata);
+
+  for (const candidate of asArray(metadata?.meta)) {
+    const meta = getObject(candidate);
+
+    if (getString(meta?.['@_name']) === 'cover') {
+      return getString(meta?.['@_content']) ?? undefined;
+    }
+  }
+
+  return undefined;
+}
+
+async function readCoverImage(
+  zip: JSZip,
+  packageNode: XmlObject,
+  manifestItems: SpineItem[],
+): Promise<{ base64: string; mediaType: string } | undefined> {
+  const coverPath = findEpubCoverPath(manifestItems, readMetaCoverId(packageNode));
+
+  if (!coverPath) {
+    return undefined;
+  }
+
+  const file = zip.file(coverPath);
+
+  if (!file) {
+    return undefined;
+  }
+
+  // A missing or unreadable cover is never worth failing an import over — the
+  // library falls back to a generated card and the book still opens.
+  try {
+    const base64 = await file.async('base64');
+    const mediaType =
+      manifestItems.find((item) => item.path === coverPath)?.mediaType ?? 'image/jpeg';
+
+    return base64 ? { base64, mediaType } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function readManifestItems(packageNode: XmlObject, opfPath: string): SpineItem[] {
