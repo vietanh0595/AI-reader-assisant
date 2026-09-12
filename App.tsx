@@ -55,6 +55,7 @@ import { ErrorInsightCard } from './src/components/ErrorInsightCard';
 import { buildDeleteBookPrompt } from './src/library/deleteBookPrompt';
 import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
 import { isWholeBookScopeOn } from './src/library/wholeBookScope';
+import { deleteAccount } from './src/auth/deleteAccount';
 import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -2692,6 +2693,8 @@ function ReaderApp() {
   // WholeBookAiSheet redirect and the auto-continue effect below.
   const [pendingMindMapAfterEnable, setPendingMindMapAfterEnable] = useState<{ bookId: string; bookTitle: string } | null>(null);
 
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2864,6 +2867,120 @@ function ReaderApp() {
         onPress: () => { void deleteLibraryItem(bookId); },
       },
     ]);
+  }
+
+  // Apple guideline 5.1.1(v): an app offering account creation must offer in-app
+  // account deletion. The prompt names what actually goes and what stays, because
+  // "delete account" reads as if it might take the reader's books with it.
+  function confirmDeleteAccount() {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your account and every book you have uploaded for '
+        + 'Whole-Book AI, including its mind maps.\n\n'
+        + 'Your books, notes and highlights stay on this phone.\n\n'
+        + "This can't be undone.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: () => { void runDeleteAccount(); },
+        },
+      ],
+    );
+  }
+
+  async function runDeleteAccount() {
+    const token = await getAccessToken();
+
+    if (!token) {
+      setIsSignInOpen(true);
+      return;
+    }
+
+    setIsDeletingAccount(true);
+
+    try {
+      // deleteAccount() signs out itself, immediately and with nothing in between —
+      // the token stays valid after deletion and the server provisions a user from
+      // it, so any authenticated call in the gap would recreate the account.
+      await deleteAccount({ apiBaseUrl, accessToken: token, signOut });
+      // Every book's cloud state belonged to the account that just went, so it is
+      // cleared here rather than left pointing at books the server no longer has.
+      setLibraryItems((items) =>
+        items.map((item) => ({
+          ...item,
+          includeWholeBook: false,
+          wholeBookAi: defaultWholeBookAiState,
+        })),
+      );
+    } catch (error) {
+      setImportError(getErrorMessage(error));
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  }
+
+  // Removing a book's uploaded copy without removing the book. Until this existed,
+  // deleting the whole book was the only way, which took the reader's own notes and
+  // highlights with it — a steep price for exercising a data right.
+  async function disableWholeBookAi(bookId: string) {
+    const item = libraryItems.find((candidate) => candidate.id === bookId);
+    const cloudBookId = item?.wholeBookAi.cloudBookId;
+
+    if (!item || !cloudBookId) {
+      return;
+    }
+
+    const token = await getAccessToken();
+
+    if (!token) {
+      setIsSignInOpen(true);
+      return;
+    }
+
+    setLibraryItems((items) =>
+      items.map((candidate) =>
+        candidate.id === bookId
+          ? { ...candidate, wholeBookAi: { ...candidate.wholeBookAi, status: 'deleting' } }
+          : candidate,
+      ),
+    );
+
+    let ok = false;
+    try {
+      const response = await fetch(`${apiBaseUrl}/library/books/${cloudBookId}/index`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // A 404 means the server has no copy, which is the state we were asking for.
+      ok = response.ok || response.status === 404;
+    } catch {
+      ok = false;
+    }
+
+    setLibraryItems((items) =>
+      items.map((candidate) =>
+        candidate.id === bookId
+          ? {
+              ...candidate,
+              // The scope flag is a preference about a book that is now unindexed, so
+              // it goes with the index rather than lingering as a stale true.
+              includeWholeBook: false,
+              wholeBookAi: ok ? defaultWholeBookAiState : item.wholeBookAi,
+            }
+          : candidate,
+      ),
+    );
+
+    if (!ok) {
+      setImportError(
+        `Couldn't turn off Whole-Book AI for "${item.book.title}". Check your connection and try again.`,
+      );
+      return;
+    }
+
+    setIsWholeBookAiOpen(false);
   }
 
   async function deleteLibraryItem(bookId: string) {
@@ -4443,8 +4560,10 @@ function ReaderApp() {
               isImportingBook={isImportingBook}
               isScanningDocument={isScanningDocument}
               items={libraryItems}
+              onDeleteAccount={confirmDeleteAccount}
               onDeleteBook={confirmDeleteLibraryItem}
               onDismissError={() => setImportError(null)}
+              isDeletingAccount={isDeletingAccount}
               onImportBook={importBook}
               onOpenBook={openLibraryItem}
               onOpenMindMap={(bookId, bookTitle) => { void openMindMap(bookId, bookTitle); }}
@@ -4650,6 +4769,11 @@ function ReaderApp() {
           }}
           onEnable={() => { void runIndexBook(); }}
           onRetry={() => { void runIndexBook(); }}
+          onDisable={
+            activeLibraryItem.wholeBookAi.cloudBookId
+              ? () => { void disableWholeBookAi(activeLibraryItem.id); }
+              : undefined
+          }
         />
       ) : null}
 
@@ -4784,9 +4908,11 @@ function LibraryScreen({
   activeBookId,
   errorMessage,
   isAuthenticated,
+  isDeletingAccount,
   isImportingBook,
   isScanningDocument,
   items,
+  onDeleteAccount,
   onDeleteBook,
   onDismissError,
   onImportBook,
@@ -4800,9 +4926,11 @@ function LibraryScreen({
   activeBookId: string;
   errorMessage: string | null;
   isAuthenticated: boolean;
+  isDeletingAccount: boolean;
   isImportingBook: boolean;
   isScanningDocument: boolean;
   items: LibraryItem[];
+  onDeleteAccount: () => void;
   onDeleteBook: (bookId: string) => void;
   onDismissError: () => void;
   onImportBook: () => void;
@@ -4957,6 +5085,29 @@ function LibraryScreen({
             </View>
           );
         })}
+
+        {/*
+          Deliberately at the foot of the list and not in the header: the header row
+          holds Import and Scan, and an irreversible account action does not belong a
+          thumb's width from the two most-used buttons.
+        */}
+        {isAuthenticated ? (
+          <Pressable
+            accessibilityLabel={isDeletingAccount ? 'Deleting your account' : 'Delete account'}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isDeletingAccount }}
+            disabled={isDeletingAccount}
+            onPress={onDeleteAccount}
+            style={styles.libraryDeleteAccountRow}
+          >
+            {isDeletingAccount ? (
+              <ActivityIndicator color={colors.error} size="small" />
+            ) : null}
+            <Text style={styles.libraryDeleteAccountText}>
+              {isDeletingAccount ? 'Deleting account…' : 'Delete account'}
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -6491,6 +6642,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 17,
     marginTop: 2,
+  },
+  libraryDeleteAccountRow: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    marginTop: 28,
+    paddingVertical: 10,
+  },
+  libraryDeleteAccountText: {
+    color: colors.error,
+    fontSize: 14,
+    fontWeight: '600',
   },
   libraryBookMetaRow: {
     flexDirection: 'row',
