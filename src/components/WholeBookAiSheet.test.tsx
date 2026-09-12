@@ -133,3 +133,53 @@ test('calls onClose when close button pressed', async () => {
   fireEvent.press(screen.getByRole('button', { name: /close/i }));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('a ready book can be turned off again', async () => {
+  // Deleting the whole book was the only way to remove its uploaded copy, which
+  // also destroyed the reader's own notes and highlights for it.
+  const onDisable = jest.fn();
+  const screen = await render(
+    <WholeBookAiSheet
+      state={readyState}
+      onClose={jest.fn()}
+      onEnable={jest.fn()}
+      onRetry={jest.fn()}
+      onDisable={onDisable}
+    />,
+  );
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Turn off whole-book AI' }));
+
+  expect(onDisable).toHaveBeenCalledTimes(1);
+});
+
+test('a book that was never enabled has nothing to turn off', async () => {
+  const screen = await render(
+    <WholeBookAiSheet
+      state={notEnabledState}
+      onClose={jest.fn()}
+      onEnable={jest.fn()}
+      onRetry={jest.fn()}
+      onDisable={jest.fn()}
+    />,
+  );
+
+  expect(screen.queryByRole('button', { name: 'Turn off whole-book AI' })).toBeNull();
+});
+
+test('turning off shows it is working and cannot be fired twice', async () => {
+  const onDisable = jest.fn();
+  const screen = await render(
+    <WholeBookAiSheet
+      state={{ ...readyState, status: 'deleting' }}
+      onClose={jest.fn()}
+      onEnable={jest.fn()}
+      onRetry={jest.fn()}
+      onDisable={onDisable}
+    />,
+  );
+
+  await fireEvent.press(screen.getByLabelText('Turning off whole-book AI'));
+
+  expect(onDisable).not.toHaveBeenCalled();
+});

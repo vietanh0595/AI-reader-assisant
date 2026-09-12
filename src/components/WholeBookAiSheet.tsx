@@ -7,6 +7,10 @@ export type WholeBookAiSheetProps = {
   onClose: () => void;
   onEnable: () => void;
   onRetry: () => void;
+  // Removing a book's uploaded copy used to mean deleting the whole book, which took
+  // the reader's own notes and highlights with it. Optional so the sheet still renders
+  // for callers that have nothing to turn off.
+  onDisable?: () => void;
 };
 
 const palette = {
@@ -24,7 +28,7 @@ function pct(progress: number): number {
   return Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 }
 
-export function WholeBookAiSheet({ state, onClose, onEnable, onRetry }: WholeBookAiSheetProps) {
+export function WholeBookAiSheet({ state, onClose, onEnable, onRetry, onDisable }: WholeBookAiSheetProps) {
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
       {/*
@@ -106,6 +110,21 @@ export function WholeBookAiSheet({ state, onClose, onEnable, onRetry }: WholeBoo
             </View>
           )}
 
+          {state.status === 'deleting' && (
+            <View>
+              <Pressable
+                style={[styles.disableButton, styles.disabledButton]}
+                disabled
+                accessibilityRole="button"
+                accessibilityLabel="Turning off whole-book AI"
+                accessibilityState={{ disabled: true }}
+              >
+                <Text style={styles.disableButtonText}>Turning off…</Text>
+              </Pressable>
+              <Text style={styles.hint}>Removing the uploaded copy from our servers.</Text>
+            </View>
+          )}
+
           {state.status === 'ready' && (
             <View>
               <Text style={styles.successText}>Whole-Book AI is ready.</Text>
@@ -120,6 +139,20 @@ export function WholeBookAiSheet({ state, onClose, onEnable, onRetry }: WholeBoo
               >
                 <Text style={styles.primaryButtonText}>Start asking</Text>
               </Pressable>
+              {onDisable ? (
+                <Pressable
+                  style={styles.disableButton}
+                  onPress={onDisable}
+                  accessibilityRole="button"
+                  accessibilityLabel="Turn off whole-book AI"
+                >
+                  <Text style={styles.disableButtonText}>Turn off whole-book AI</Text>
+                </Pressable>
+              ) : null}
+              <Text style={styles.hint}>
+                Turning it off deletes the uploaded copy and its mind maps from our servers. The
+                book, your notes and your highlights stay on this device.
+              </Text>
             </View>
           )}
 
@@ -158,6 +191,22 @@ function ProgressTrack({ progress, indeterminate }: { progress: number; indeterm
 }
 
 const styles = StyleSheet.create({
+  disableButton: {
+    alignItems: 'center',
+    borderColor: palette.hairline,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingVertical: 12,
+  },
+  disableButtonText: {
+    color: palette.error,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

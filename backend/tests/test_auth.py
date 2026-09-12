@@ -544,3 +544,68 @@ def test_create_app_constructs_validator_for_complete_oidc_settings(
     assert isinstance(configured_app.state.jwt_validator, FakeJwtValidator)
     assert len(captured_settings) == 1
     assert captured_settings[0] == configured_settings.require_oidc_settings()
+
+
+def _make_book(session, user_id, title="The Gold-Bug"):
+    from backend.app.indexing.models import Book
+
+    book = Book(
+        user_id=user_id,
+        client_book_id=f"client-{uuid4()}",
+        title=title,
+        author="Edgar Allan Poe",
+        source_type="epub",
+    )
+    session.add(book)
+    session.flush()
+    return book.id
+
+
+def test_delete_account_requires_a_bearer_token(test_client):
+    response = test_client.delete("/auth/me")
+
+    assert response.status_code == 401
+
+
+def test_delete_account_removes_the_user_and_everything_they_uploaded(
+    auth_client, committed_user, migrated_database
+):
+    # Apple guideline 5.1.1(v): an app offering account creation must offer
+    # in-app account deletion.
+    from backend.app.db.models import User
+    from backend.app.indexing.models import Book
+
+    with Session(migrated_database) as session:
+        with session.begin():
+            _make_book(session, committed_user)
+
+    response = auth_client.delete("/auth/me")
+
+    assert response.status_code == 204
+    with Session(migrated_database) as session:
+        assert session.get(User, committed_user) is None
+        remaining = session.execute(
+            select(Book).where(Book.user_id == committed_user)
+        ).scalars().all()
+        assert remaining == []
+
+
+def test_deleting_one_account_leaves_another_users_books_alone(
+    auth_client, committed_user, committed_other_user, migrated_database
+):
+    from backend.app.db.models import User
+    from backend.app.indexing.models import Book
+
+    with Session(migrated_database) as session:
+        with session.begin():
+            _make_book(session, committed_user, "Mine")
+            _make_book(session, committed_other_user, "Theirs")
+
+    auth_client.delete("/auth/me")
+
+    with Session(migrated_database) as session:
+        assert session.get(User, committed_other_user) is not None
+        survivors = session.execute(
+            select(Book).where(Book.user_id == committed_other_user)
+        ).scalars().all()
+        assert [book.title for book in survivors] == ["Theirs"]
