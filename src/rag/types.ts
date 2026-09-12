@@ -27,7 +27,10 @@ export type ReaderBlockKind =
   | 'sectionHeading'
   | 'subheading'
   | 'quote'
-  | 'listItem';
+  | 'listItem'
+  // Not a kind of text: it renders as a figure rather than a paragraph, and the only
+  // thing readable about it is its alt text.
+  | 'image';
 
 export type UploadBlock = {
   blockKind: ReaderBlockKind;

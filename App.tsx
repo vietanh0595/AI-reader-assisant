@@ -61,7 +61,7 @@ import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
 import { createIndexApi } from './src/rag/indexApi';
 import { indexBook } from './src/rag/indexBook';
-import type { WholeBookAiState } from './src/rag/types';
+import type { ReaderBlockKind, WholeBookAiState } from './src/rag/types';
 import { selectPendingNotice, type PersistedPendingNotice } from './src/rag/backgroundNotice';
 import { type ConversationTurn, LIBRARY_SCHEMA_VERSION, migrateLibraryItem } from './src/library/conversation';
 import { appendTurns } from './src/library/appendTurn';
@@ -115,15 +115,6 @@ type AppIcon = ComponentType<LucideProps>;
 type SelectionKind = 'word' | 'phrase' | 'paragraph';
 type DocumentSource = 'epub' | 'pdf' | 'sample' | 'scan';
 type DocumentBoxUnit = 'px' | 'ratio';
-type ReaderBlockKind =
-  | 'body'
-  | 'chapterNumber'
-  | 'chapterTitle'
-  | 'sectionHeading'
-  | 'subheading'
-  | 'quote'
-  | 'listItem';
-
 type DocumentBoundingBox = {
   height: number;
   unit: DocumentBoxUnit;
@@ -275,6 +266,9 @@ type LibraryItem = {
   // existed and for files that declare none — the library draws a title card instead.
   // Never uploaded; it lives in the app's own storage alongside the reader state.
   coverUri?: string;
+  // Where this book's figures were written, so deleting the book can delete them.
+  // Absent for books with no images.
+  imagesDirectory?: string;
   mindMapJob?: { status: 'generating' | 'ready' | 'failed' };
   pendingNotice?: PersistedPendingNotice;
   readingLocation: ReadingLocation | null;
@@ -994,7 +988,17 @@ function getUnsupportedImportMessage(asset: DocumentPickerAsset) {
 }
 
 function toReaderBook(parsedBook: ParsedEpubBook): ReaderBook {
-  const paragraphs = withParagraphSourceRefs(parsedBook.paragraphs, 'epub', parsedBook.fileName);
+  const paragraphs = withParagraphSourceRefs(
+    // imageUri rides on sourceRef, which already has a field for exactly this and is
+    // already threaded through selections, citations and note export.
+    parsedBook.paragraphs.map((paragraph) =>
+      paragraph.imageUri
+        ? { ...paragraph, sourceRef: { imageUri: paragraph.imageUri, source: 'epub' as const } }
+        : paragraph,
+    ),
+    'epub',
+    parsedBook.fileName,
+  );
 
   return {
     author: parsedBook.author,
@@ -1256,6 +1260,21 @@ async function saveCoverImage(
     return target;
   } catch {
     return undefined;
+  }
+}
+
+// A book's figures go with the book. They can be tens of megabytes, so leaving them
+// behind is worth more than the tidiness — but a failure here is still only an
+// orphaned directory, never something to interrupt the reader over.
+async function deleteBookImages(imagesDirectory?: string) {
+  if (!imagesDirectory) {
+    return;
+  }
+
+  try {
+    await FileSystem.deleteAsync(imagesDirectory, { idempotent: true });
+  } catch {
+    // Orphaned directory; nothing breaks.
   }
 }
 
@@ -2418,6 +2437,24 @@ function createReaderHtml(readerParagraphs: Paragraph[]) {
         margin: 0 0 14px 18px;
       }
 
+      .reader-image {
+        margin: 24px 0;
+        text-align: center;
+      }
+
+      .reader-image img {
+        /* Books state their own pixel widths, which are almost always wider than a
+           phone. Capping at the column width and letting height follow keeps a
+           figure in proportion without a horizontal scroll. */
+        height: auto;
+        max-width: 100%;
+        /* A figure is not selectable text, and a long-press on one should not open
+           the AI toolbar with nothing in it. */
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
       ::selection {
         background: #cfdec8;
         color: #171715;
@@ -2631,6 +2668,26 @@ function createReaderHtml(readerParagraphs: Paragraph[]) {
 
 function renderReaderBlockHtml(paragraph: Paragraph) {
   const blockKind = getReaderBlockKind(paragraph);
+
+  if (blockKind === 'image') {
+    const imageUri = paragraph.sourceRef?.imageUri;
+
+    if (!imageUri) {
+      return '';
+    }
+
+    // The alt attribute is the book's own description where it had a real one, and
+    // empty where it did not — an empty alt tells a screen reader to skip a
+    // decorative image rather than announce a filename.
+    const alt = escapeHtml(getParagraphText(paragraph));
+
+    return `<figure id="${escapeHtml(paragraph.id)}" data-paragraph-id="${escapeHtml(
+      paragraph.id,
+    )}" data-reader-block="image" class="reader-block reader-image"><img src="${escapeHtml(
+      imageUri,
+    )}" alt="${alt}" /></figure>`;
+  }
+
   const tagName = getReaderHtmlTag(blockKind);
   const className = `reader-block reader-${blockKind}`;
   const text = escapeHtml(getParagraphText(paragraph));
@@ -3195,6 +3252,7 @@ function ReaderApp() {
     }
 
     void deleteCoverImage(itemToDelete.coverUri);
+    void deleteBookImages(itemToDelete.imagesDirectory);
 
     const remainingItems = libraryItems.filter((item) => item.id !== bookId);
     const nextActiveItem =
@@ -3815,7 +3873,10 @@ function ReaderApp() {
         ? await saveCoverImage(importedItem.id, coverSource)
         : undefined;
       clearSelection();
-      setLibraryItems((currentItems) => [{ ...importedItem, coverUri }, ...currentItems]);
+      setLibraryItems((currentItems) => [
+        { ...importedItem, coverUri, imagesDirectory: parsedEpub?.imagesDirectory },
+        ...currentItems,
+      ]);
       setActiveBookId(importedItem.id);
       setIsLibraryOpen(false);
 
@@ -4442,7 +4503,14 @@ function ReaderApp() {
     const api = createIndexApi(client);
     const book = libraryItem.book;
 
-    const bookParagraphs = book.paragraphs.map((p) => ({
+    // A figure contributes only its description, so one without a usable description
+    // has nothing to index. Uploading empty blocks would spend embedding calls on
+    // nothing and put retrievable-but-meaningless results in front of the reader.
+    const indexableParagraphs = book.paragraphs.filter(
+      (p) => p.blockKind !== 'image' || p.segments.some((segment) => segment.text.trim()),
+    );
+
+    const bookParagraphs = indexableParagraphs.map((p) => ({
       id: p.id,
       blockKind: (p.blockKind ?? 'body') as import('./src/rag/types').UploadBlock['blockKind'],
       text: p.segments.map((s) => s.text).join(''),
@@ -4456,7 +4524,7 @@ function ReaderApp() {
     for (let i = 0; i < bookParagraphs.length; i++) {
       while (
         chapterIdx + 1 < book.chapters.length &&
-        book.paragraphs.findIndex((p) => p.id === book.chapters[chapterIdx + 1].paragraphId) <= i
+        indexableParagraphs.findIndex((p) => p.id === book.chapters[chapterIdx + 1].paragraphId) <= i
       ) {
         chapterIdx++;
       }
