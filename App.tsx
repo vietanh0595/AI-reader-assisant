@@ -14,7 +14,6 @@ import {
   Camera,
   Check,
   Copy as CopyIcon,
-  FileText,
   HelpCircle,
   Highlighter,
   Library as LibraryIcon,
@@ -56,6 +55,7 @@ import { buildDeleteBookPrompt } from './src/library/deleteBookPrompt';
 import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
 import { isWholeBookScopeOn } from './src/library/wholeBookScope';
 import { deleteAccount } from './src/auth/deleteAccount';
+import { BookCover } from './src/components/BookCover';
 import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -271,6 +271,10 @@ type LibraryItem = {
   // "Whole book" scope for the Ask thread. Stored per book rather than in component
   // state so it survives a force-quit, and so each book keeps its own answer.
   includeWholeBook?: boolean;
+  // Local file path of the book's cover art. Absent for books imported before covers
+  // existed and for files that declare none — the library draws a title card instead.
+  // Never uploaded; it lives in the app's own storage alongside the reader state.
+  coverUri?: string;
   mindMapJob?: { status: 'generating' | 'ready' | 'failed' };
   pendingNotice?: PersistedPendingNotice;
   readingLocation: ReadingLocation | null;
@@ -347,6 +351,9 @@ type PdfImportPageResponse = {
 
 type PdfImportResult = {
   author: string;
+  // Page one rendered small, standing in for a cover the file does not carry.
+  // Absent when the page cannot be rendered — the library draws a title card.
+  cover?: { base64: string; mediaType: string };
   outline: Array<{ pageIndex: number; title: string; depth?: number }>;
   pageCount: number;
   pages: PdfImportPageResponse[];
@@ -1204,6 +1211,62 @@ function formatScanDate(date: Date) {
     day: 'numeric',
     month: 'short',
   });
+}
+
+const coversDirectory = FileSystem.documentDirectory
+  ? `${FileSystem.documentDirectory}covers/`
+  : null;
+
+const coverExtensions: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+};
+
+/**
+ * Write a book's cover art into the app's own storage and return its path.
+ *
+ * Covers have to be captured during import, because the picked file is gone
+ * afterwards — nothing is copied into app storage. A failure here is never worth
+ * failing an import over: the book still opens and the library draws a title card,
+ * so this returns undefined rather than throwing.
+ */
+async function saveCoverImage(
+  bookId: string,
+  cover: { base64: string; mediaType: string },
+): Promise<string | undefined> {
+  if (!coversDirectory) {
+    return undefined;
+  }
+
+  try {
+    await FileSystem.makeDirectoryAsync(coversDirectory, { intermediates: true });
+    const extension = coverExtensions[cover.mediaType.toLowerCase()] ?? 'jpg';
+    const target = `${coversDirectory}${slugifyForFileName(bookId)}.${extension}`;
+    await FileSystem.writeAsStringAsync(target, cover.base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+// Covers outlive nothing: when the book goes, so does its art. Failing to delete is
+// not worth surfacing — the file is orphaned, not harmful.
+async function deleteCoverImage(coverUri?: string) {
+  if (!coverUri) {
+    return;
+  }
+
+  try {
+    await FileSystem.deleteAsync(coverUri, { idempotent: true });
+  } catch {
+    // Orphaned file; nothing the reader can do about it and nothing breaks.
+  }
 }
 
 function createLibraryItem(book: ReaderBook): LibraryItem {
@@ -2064,6 +2127,12 @@ function isPdfImportResult(value: unknown): value is PdfImportResult {
     isFiniteNumber(value.pageCount) &&
     Array.isArray(value.pages) &&
     value.pages.every(isPdfImportPageResponse) &&
+    // A cover is optional, and a malformed one is not a reason to reject an entire
+    // import — but it must be the right shape before being written to disk.
+    (value.cover === undefined ||
+      (isRecord(value.cover) &&
+        typeof value.cover.base64 === 'string' &&
+        typeof value.cover.mediaType === 'string')) &&
     typeof value.title === 'string'
   );
 }
@@ -3042,6 +3111,8 @@ function ReaderApp() {
       }
     }
 
+    void deleteCoverImage(itemToDelete.coverUri);
+
     const remainingItems = libraryItems.filter((item) => item.id !== bookId);
     const nextActiveItem =
       activeBookId === bookId ? remainingItems[0] ?? sampleLibraryItem : getActiveLibraryItem(remainingItems, activeBookId);
@@ -3647,12 +3718,21 @@ function ReaderApp() {
         throw new Error(getUnsupportedImportMessage(asset));
       }
 
-      const importedBook = isSupportedPdfAsset(asset)
-        ? toPdfReaderBook(await requestApplePdfImport(asset.uri), asset)
-        : toReaderBook(await parseEpubAsset(asset));
+      const isPdf = isSupportedPdfAsset(asset);
+      const pdfResult = isPdf ? await requestApplePdfImport(asset.uri) : null;
+      const parsedEpub = isPdf ? null : await parseEpubAsset(asset);
+      const importedBook = pdfResult
+        ? toPdfReaderBook(pdfResult, asset)
+        : toReaderBook(parsedEpub!);
       const importedItem = createLibraryItem(importedBook);
+      // EPUBs carry their own cover art; PDFs give us page one rendered as a
+      // thumbnail. Either way it has to be written now, while we still have it.
+      const coverSource = pdfResult?.cover ?? parsedEpub?.cover;
+      const coverUri = coverSource
+        ? await saveCoverImage(importedItem.id, coverSource)
+        : undefined;
       clearSelection();
-      setLibraryItems((currentItems) => [importedItem, ...currentItems]);
+      setLibraryItems((currentItems) => [{ ...importedItem, coverUri }, ...currentItems]);
       setActiveBookId(importedItem.id);
       setIsLibraryOpen(false);
 
@@ -5016,9 +5096,11 @@ function LibraryScreen({
           return (
             <View key={item.id} style={[styles.libraryBookCard, isActive && styles.libraryBookCardActive]}>
               <View style={styles.libraryBookTop}>
-                <View style={styles.libraryBookIcon}>
-                  <FileText color={colors.sageDark} size={18} strokeWidth={2} />
-                </View>
+                <BookCover
+                  author={item.book.author}
+                  coverUri={item.coverUri}
+                  title={item.book.title}
+                />
                 <View style={styles.libraryBookTitleBlock}>
                   <Text numberOfLines={2} style={styles.libraryBookTitle}>
                     {item.book.title}
@@ -6615,14 +6697,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     flexDirection: 'row',
     gap: 11,
-  },
-  libraryBookIcon: {
-    alignItems: 'center',
-    backgroundColor: '#edf3e9',
-    borderRadius: 8,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
   },
   libraryBookTitleBlock: {
     flex: 1,
