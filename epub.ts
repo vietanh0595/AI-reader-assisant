@@ -3,9 +3,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { XMLParser } from 'fast-xml-parser';
 import JSZip from 'jszip';
 
+import { isMeaningfulAltText } from './src/library/altText';
 import { findEpubCoverPath } from './src/library/findEpubCover';
 
 type SelectionKind = 'word' | 'phrase' | 'paragraph';
+// 'image' is not a kind of text. It carries no prose, renders as a figure rather
+// than a paragraph, and is indexed by its alt text alone.
 export type EpubBlockKind =
   | 'body'
   | 'chapterNumber'
@@ -13,7 +16,8 @@ export type EpubBlockKind =
   | 'sectionHeading'
   | 'subheading'
   | 'quote'
-  | 'listItem';
+  | 'listItem'
+  | 'image';
 
 type PassageSegment = {
   id: string;
@@ -25,6 +29,9 @@ type PassageSegment = {
 export type EpubParagraph = {
   blockKind: EpubBlockKind;
   id: string;
+  // Local file path of the figure, on image blocks only. The reader renders it; the
+  // search index never sees it, because a picture is not text.
+  imageUri?: string;
   segments: PassageSegment[];
 };
 
@@ -40,6 +47,9 @@ export type ParsedEpubBook = {
   // The book's own cover art, base64, ready to be written to disk by the caller.
   // Absent when the file declares none — the library draws a title card instead.
   cover?: { base64: string; mediaType: string };
+  // Where this book's figures were written. Held so deleting the book can delete
+  // them; absent when the book has none.
+  imagesDirectory?: string;
   fileName: string;
   paragraphs: EpubParagraph[];
   title: string;
@@ -68,6 +78,13 @@ type ResolvedHrefTarget = {
 type ContentBlock = {
   anchorIds: string[];
   blockKind: EpubBlockKind;
+  // Filled in after the image is written to disk. Absent means it could not be
+  // extracted, and the block is dropped rather than rendered as an empty frame.
+  imageUri?: string;
+  // Present only on image blocks. `src` is the path as written in the markup,
+  // resolved against the containing document by the caller; `alt` is the book's own
+  // description, which is the only thing about a figure the AI can read.
+  image?: { alt: string; src: string };
   isHeading: boolean;
   tagName: string;
   text: string;
@@ -116,6 +133,14 @@ export async function parseEpubAsset(asset: DocumentPickerAsset): Promise<Parsed
   const pathToFirstParagraphId = new Map<string, string>();
   const titleToParagraphIds: TitleTargets = new Map();
 
+  // One directory per import, named uniquely so two copies of the same book never
+  // share figures. Created lazily: a text-only book leaves nothing behind.
+  const imagesDirectory = FileSystem.documentDirectory
+    ? `${FileSystem.documentDirectory}images/${Date.now()}-${Math.random().toString(36).slice(2, 8)}/`
+    : null;
+  const writtenImages = new Map<string, string>();
+  let imagesDirectoryCreated = false;
+
   for (const spineItem of spineItems) {
     const html = await readZipText(zip, spineItem.path);
     const contentBlocks = extractContentBlocks(html);
@@ -124,14 +149,29 @@ export async function parseEpubAsset(asset: DocumentPickerAsset): Promise<Parsed
       continue;
     }
 
-    const chapterParagraphs = buildParagraphs(contentBlocks, paragraphs.length);
+    if (imagesDirectory && contentBlocks.some((block) => block.blockKind === 'image')) {
+      if (!imagesDirectoryCreated) {
+        await FileSystem.makeDirectoryAsync(imagesDirectory, { intermediates: true });
+        imagesDirectoryCreated = true;
+      }
+
+      await writeSpineImages(zip, spineItem.path, contentBlocks, imagesDirectory, writtenImages);
+    }
+
+    // A figure that could not be written would otherwise render as an empty frame
+    // in the middle of the prose.
+    const readableBlocks = contentBlocks.filter(
+      (block) => block.blockKind !== 'image' || block.imageUri,
+    );
+
+    const chapterParagraphs = buildParagraphs(readableBlocks, paragraphs.length);
 
     if (chapterParagraphs.length === 0) {
       continue;
     }
 
     pathToFirstParagraphId.set(spineItem.path, chapterParagraphs[0].id);
-    contentBlocks.forEach((block, index) => {
+    readableBlocks.forEach((block, index) => {
       block.anchorIds.forEach((anchorId) => {
         pathAndAnchorToParagraphId.set(anchorKey(spineItem.path, anchorId), chapterParagraphs[index].id);
       });
@@ -140,7 +180,7 @@ export async function parseEpubAsset(asset: DocumentPickerAsset): Promise<Parsed
         addTitleTarget(titleToParagraphIds, block.text, chapterParagraphs[index].id);
       }
     });
-    contentChapters.push(...buildChaptersFromContent(contentBlocks, chapterParagraphs, contentChapters.length));
+    contentChapters.push(...buildChaptersFromContent(readableBlocks, chapterParagraphs, contentChapters.length));
     fallbackChapterSources.push({
       paragraphId: chapterParagraphs[0].id,
       title: extractChapterTitle(html) ?? spineItem.title ?? `Chapter ${fallbackChapterSources.length + 1}`,
@@ -171,6 +211,7 @@ export async function parseEpubAsset(asset: DocumentPickerAsset): Promise<Parsed
     chapters,
     cover: await readCoverImage(zip, packageNode, manifestItems),
     fileName: asset.name,
+    imagesDirectory: imagesDirectoryCreated && imagesDirectory ? imagesDirectory : undefined,
     paragraphs,
     title,
   };
@@ -252,6 +293,67 @@ function readMetaCoverId(packageNode: XmlObject): string | undefined {
   }
 
   return undefined;
+}
+
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|svg)$/i;
+
+/**
+ * Write a spine document's figures into `directory`, returning the local path for
+ * each image block.
+ *
+ * Images are extracted during import because the picked file is discarded
+ * afterwards. They are written to disk rather than carried in memory: a heavily
+ * illustrated book is tens of megabytes, and the reader's WebView is already the
+ * component iOS kills first under memory pressure.
+ *
+ * Deduplicated by path within the book, since a plate reused across chapters is one
+ * file, not several.
+ */
+async function writeSpineImages(
+  zip: JSZip,
+  spinePath: string,
+  blocks: ContentBlock[],
+  directory: string,
+  written: Map<string, string>,
+): Promise<void> {
+  for (const block of blocks) {
+    if (block.blockKind !== 'image' || !block.image) {
+      continue;
+    }
+
+    const zipPath = resolveZipPath(dirname(spinePath), block.image.src.split('#')[0]);
+    const existing = written.get(zipPath);
+
+    if (existing) {
+      block.imageUri = existing;
+      continue;
+    }
+
+    const file = zip.file(zipPath);
+
+    if (!file) {
+      continue;
+    }
+
+    try {
+      const base64 = await file.async('base64');
+
+      if (!base64) {
+        continue;
+      }
+
+      const extension = IMAGE_EXTENSIONS.exec(zipPath)?.[1]?.toLowerCase() ?? 'jpg';
+      const target = `${directory}${written.size}.${extension === 'jpeg' ? 'jpg' : extension}`;
+      await FileSystem.writeAsStringAsync(target, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      written.set(zipPath, target);
+      block.imageUri = target;
+    } catch {
+      // A figure that cannot be read is dropped, not fatal. The surrounding prose
+      // still imports and the book still opens.
+    }
+  }
 }
 
 async function readCoverImage(
@@ -492,7 +594,46 @@ function buildChaptersFromContent(
     .filter((chapter): chapter is EpubChapter => chapter !== null);
 }
 
-function extractContentBlocks(html: string): ContentBlock[] {
+const IMG_TAG = /<img\b[^>]*>/gi;
+
+function readImgAttribute(tag: string, name: 'src' | 'alt'): string {
+  const match = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag);
+  return match ? decodeHtmlEntities(match[1]).trim() : '';
+}
+
+function toImageBlock(tag: string): ContentBlock | null {
+  const src = readImgAttribute(tag, 'src');
+
+  if (!src) {
+    return null;
+  }
+
+  const alt = readImgAttribute(tag, 'alt');
+  // Placeholder alt text is discarded here rather than downstream, so the block's
+  // text is either a real description or nothing at all.
+  const description = isMeaningfulAltText(alt) ? alt : '';
+
+  return {
+    anchorIds: [],
+    blockKind: 'image',
+    image: { alt: description, src },
+    isHeading: false,
+    tagName: 'img',
+    // The description doubles as the block's text so the rest of the pipeline —
+    // search indexing, citation excerpts, export — needs no special case for
+    // figures. An undescribed figure indexes as nothing, which is correct: there is
+    // nothing to read.
+    text: description,
+  };
+}
+
+/**
+ * Exported for tests. Real EPUBs wrap figures in whatever their producer preferred,
+ * and the two shapes that matter here fail in opposite ways: an image alone in a
+ * <div> is never matched by the block scanner, while one inside a <p> is matched and
+ * then discarded for having no text.
+ */
+export function extractContentBlocks(html: string): ContentBlock[] {
   const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html;
   const withoutScripts = body.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
   const primaryBlocks = readHtmlBlocks(withoutScripts, /<(h[1-6]|p|li|blockquote)\b([^>]*)>([\s\S]*?)<\/\1>/gi);
@@ -500,18 +641,59 @@ function extractContentBlocks(html: string): ContentBlock[] {
     primaryBlocks.length > 0 ? primaryBlocks : readHtmlBlocks(withoutScripts, /<(div)\b([^>]*)>([\s\S]*?)<\/div>/gi);
   const contentBlocksWithoutKinds: ContentBlock[] = [];
   let pendingAnchorIds: string[] = [];
+  // Images that sit outside any matched block — Peter Rabbit's <div class="fig"> —
+  // are found by position so they can be slotted back into reading order rather
+  // than appended at the end.
+  const looseImages = Array.from(withoutScripts.matchAll(IMG_TAG))
+    .map((match) => ({ index: match.index ?? 0, tag: match[0] }))
+    .filter(
+      (candidate) =>
+        !rawBlocks.some(
+          (block) => candidate.index >= block.start && candidate.index < block.end,
+        ),
+    );
+  let nextLooseImage = 0;
+
+  function flushLooseImagesBefore(limit: number) {
+    while (nextLooseImage < looseImages.length && looseImages[nextLooseImage].index < limit) {
+      const block = toImageBlock(looseImages[nextLooseImage].tag);
+      nextLooseImage += 1;
+
+      if (block) {
+        contentBlocksWithoutKinds.push(block);
+      }
+    }
+  }
 
   rawBlocks.forEach((block) => {
+    flushLooseImagesBefore(block.start);
+
     const text = htmlToPlainText(block.html);
     const anchorIds = uniqueStrings([...pendingAnchorIds, ...block.anchorIds]);
+    // A figure inside this block comes first: the markup puts the image above its
+    // caption, and this keeps that order.
+    const inlineImages = Array.from(block.html.matchAll(IMG_TAG))
+      .map((match) => toImageBlock(match[0]))
+      .filter((imageBlock): imageBlock is ContentBlock => imageBlock !== null);
 
-    if (!text || (!block.isHeading && text.length < 12)) {
-      pendingAnchorIds = anchorIds;
+    inlineImages.forEach((imageBlock) => {
+      contentBlocksWithoutKinds.push({ ...imageBlock, anchorIds });
+      pendingAnchorIds = [];
+    });
+
+    // Short text is normally layout debris, but a caption sitting under a figure is
+    // the one place a handful of characters carries meaning — "Fig. 3" is the whole
+    // point of the block.
+    const followsImage = inlineImages.length > 0 || contentBlocksWithoutKinds.at(-1)?.blockKind === 'image';
+    const isDebris = !text || (!block.isHeading && !followsImage && text.length < 12);
+
+    if (isDebris) {
+      pendingAnchorIds = inlineImages.length > 0 ? [] : anchorIds;
       return;
     }
 
     contentBlocksWithoutKinds.push({
-      anchorIds,
+      anchorIds: inlineImages.length > 0 ? [] : anchorIds,
       blockKind: 'body',
       isHeading: block.isHeading,
       tagName: block.tagName,
@@ -520,13 +702,20 @@ function extractContentBlocks(html: string): ContentBlock[] {
     pendingAnchorIds = [];
   });
 
+  flushLooseImagesBefore(Number.MAX_SAFE_INTEGER);
+
   return applyReaderBlockKinds(contentBlocksWithoutKinds);
 }
 
 function applyReaderBlockKinds(contentBlocks: ContentBlock[]): ContentBlock[] {
   return contentBlocks.map((block, index) => ({
     ...block,
-    blockKind: inferReaderBlockKind(block, contentBlocks[index - 1] ?? null, contentBlocks[index + 1] ?? null),
+    // A figure is already what it is. Inference reads neighbouring text to guess at
+    // headings and quotes, and has nothing useful to say about an image.
+    blockKind:
+      block.blockKind === 'image'
+        ? 'image'
+        : inferReaderBlockKind(block, contentBlocks[index - 1] ?? null, contentBlocks[index + 1] ?? null),
   }));
 }
 
@@ -568,11 +757,19 @@ function inferReaderBlockKind(
   return 'body';
 }
 
-function readHtmlBlocks(
-  html: string,
-  blockPattern: RegExp,
-): Array<{ anchorIds: string[]; html: string; isHeading: boolean; tagName: string }> {
-  const blocks: Array<{ anchorIds: string[]; html: string; isHeading: boolean; tagName: string }> = [];
+type RawHtmlBlock = {
+  anchorIds: string[];
+  // Character offsets in the source, so images found outside any block can be
+  // slotted back into reading order instead of appended at the end.
+  end: number;
+  html: string;
+  isHeading: boolean;
+  start: number;
+  tagName: string;
+};
+
+function readHtmlBlocks(html: string, blockPattern: RegExp): RawHtmlBlock[] {
+  const blocks: RawHtmlBlock[] = [];
   let previousEnd = 0;
 
   Array.from(html.matchAll(blockPattern)).forEach((match) => {
@@ -589,8 +786,10 @@ function readHtmlBlocks(
 
     blocks.push({
       anchorIds,
+      end: (match.index ?? previousEnd) + fullHtml.length,
       html: fullHtml,
       isHeading: /^h[1-6]$/.test(tagName),
+      start: match.index ?? previousEnd,
       tagName,
     });
     previousEnd = (match.index ?? previousEnd) + fullHtml.length;
@@ -665,6 +864,7 @@ function buildParagraphs(contentBlocks: ContentBlock[], startIndex: number): Epu
     return {
       blockKind: block.blockKind,
       id: paragraphId,
+      imageUri: block.imageUri,
       segments: [
         {
           id: `${paragraphId}-text`,
