@@ -49,6 +49,7 @@ type SpineItem = {
 };
 
 type TocEntry = {
+  depth: number;  // 0 = top-level chapter, 1+ = sub-section
   fragment: string | null;
   path: string;
   title: string;
@@ -300,26 +301,35 @@ function extractNavTocEntries(html: string, navPath: string): TocEntry[] {
     navBlocks[0] ??
     html;
 
-  return dedupeTocEntries(
-    Array.from(tocBlock.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi))
-      .map((match) => {
-        const target = resolveHrefTarget(navPath, match[1]);
+  // Walk the block tracking <ol> nesting depth so we can distinguish top-level
+  // chapters (depth 0) from sub-section entries (depth 1+).
+  const tokenRe = /(<ol\b[^>]*>)|(<\/ol>)|(<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>)/gi;
+  const entries: TocEntry[] = [];
+  let depth = -1;
+  let match: RegExpExecArray | null;
 
-        return {
-          fragment: target.fragment,
-          path: target.path,
-          title: htmlToPlainText(match[2]) ?? '',
-        };
-      })
-      .filter((entry) => entry.title.length > 0),
-  );
+  while ((match = tokenRe.exec(tocBlock)) !== null) {
+    if (match[1]) {
+      depth++;
+    } else if (match[2]) {
+      depth--;
+    } else if (match[3] && depth >= 0) {
+      const title = htmlToPlainText(match[5]) ?? '';
+      if (title.length > 0) {
+        const target = resolveHrefTarget(navPath, match[4]);
+        entries.push({ depth, fragment: target.fragment, path: target.path, title });
+      }
+    }
+  }
+
+  return dedupeTocEntries(entries);
 }
 
 function extractNcxTocEntries(ncxText: string, ncxPath: string): TocEntry[] {
   const ncx = parseXmlObject(ncxText);
   const navMap = getObject(getObject(ncx.ncx)?.navMap);
 
-  function visitNavPoint(value: unknown): TocEntry[] {
+  function visitNavPoint(value: unknown, depth: number = 0): TocEntry[] {
     return asArray(value).flatMap((candidate) => {
       const navPoint = getObject(candidate);
 
@@ -330,18 +340,12 @@ function extractNcxTocEntries(ncxText: string, ncxPath: string): TocEntry[] {
       const title = cleanInlineText(readXmlText(getObject(firstItem(navPoint.navLabel))?.text));
       const src = getString(getObject(firstItem(navPoint.content))?.['@_src']);
       const target = src ? resolveHrefTarget(ncxPath, src) : null;
-      const currentEntry =
+      const currentEntry: TocEntry[] =
         title && target
-          ? [
-              {
-                fragment: target.fragment,
-                path: target.path,
-                title,
-              },
-            ]
+          ? [{ depth, fragment: target.fragment, path: target.path, title }]
           : [];
 
-      return [...currentEntry, ...visitNavPoint(navPoint.navPoint)];
+      return [...currentEntry, ...visitNavPoint(navPoint.navPoint, depth + 1)];
     });
   }
 
@@ -354,9 +358,17 @@ function buildChaptersFromToc(
   pathAndAnchorToParagraphId: Map<string, string>,
   titleToParagraphIds: TitleTargets,
 ): EpubChapter[] {
+  // Only use top-level entries (depth 0) as chapter boundaries so that
+  // sub-sections within a chapter don't become separate chapters. Fall back
+  // to depth ≤ 1 if the top level alone has fewer than 2 entries (handles
+  // Part › Chapter nesting where chapters sit at depth 1).
+  const minDepth = Math.min(...entries.map((e) => e.depth));
+  const topLevel = entries.filter((e) => e.depth === minDepth);
+  const filtered = topLevel.length >= 2 ? topLevel : entries.filter((e) => e.depth <= minDepth + 1);
+
   const seenParagraphIds = new Set<string>();
 
-  return entries
+  return filtered
     .map((entry) => {
       const paragraphId = resolveTocParagraphId(
         entry,

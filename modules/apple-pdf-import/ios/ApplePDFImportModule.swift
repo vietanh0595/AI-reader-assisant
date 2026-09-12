@@ -443,27 +443,32 @@ public final class ApplePDFImportModule: Module {
     }
 
     var entries: [[String: Any]] = []
-    collectOutlineEntries(root, document: document, entries: &entries)
+    for childIndex in 0..<root.numberOfChildren {
+      if let child = root.child(at: childIndex) {
+        collectOutlineEntries(child, document: document, entries: &entries, depth: 0)
+      }
+    }
     return Array(entries.prefix(500))
   }
 
   private func collectOutlineEntries(
     _ outline: PDFOutline,
     document: PDFDocument,
-    entries: inout [[String: Any]]
+    entries: inout [[String: Any]],
+    depth: Int
   ) {
     if let label = outline.label.map(normalizedText), !label.isEmpty,
        let page = outlinePage(outline) {
       let pageIndex = document.index(for: page)
 
       if pageIndex != NSNotFound {
-        entries.append(["pageIndex": pageIndex, "title": label])
+        entries.append(["pageIndex": pageIndex, "title": label, "depth": depth])
       }
     }
 
     for childIndex in 0..<outline.numberOfChildren {
       if let child = outline.child(at: childIndex) {
-        collectOutlineEntries(child, document: document, entries: &entries)
+        collectOutlineEntries(child, document: document, entries: &entries, depth: depth + 1)
       }
     }
   }
