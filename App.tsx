@@ -1213,6 +1213,10 @@ function formatScanDate(date: Date) {
   });
 }
 
+// Captured once at module load so the reader-page sweep can tell files left by an
+// earlier session from the one this session is writing right now.
+const appLaunchedAt = Date.now();
+
 const coversDirectory = FileSystem.documentDirectory
   ? `${FileSystem.documentDirectory}covers/`
   : null;
@@ -2269,6 +2273,14 @@ function createReaderHtml(readerParagraphs: Paragraph[]) {
   return `<!doctype html>
 <html>
   <head>
+    <!--
+      Required, and required first. The page is loaded from a file:// URL, where
+      there is no Content-Type header to declare an encoding, so WKWebView falls
+      back to Latin-1 and renders every em dash and curly quote as mojibake
+      ("—" becomes "â€""). This was invisible while the markup was handed over as
+      a string, because a string arrives already decoded.
+    -->
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <style>
       :root {
@@ -2808,7 +2820,78 @@ function ReaderApp() {
   const currentBook = activeLibraryItem.book;
   const readingLocation = activeLibraryItem.readingLocation;
   const savedInsights = activeLibraryItem.savedInsights;
+  // The rendered page is written to disk rather than handed to the WebView as a
+  // string, so it has a file:// origin and may load local images. A fresh filename
+  // per render sidesteps WKWebView caching a stale page at a path it has already
+  // seen; the previous one is deleted once the new one is in place.
   const readerHtml = useMemo(() => createReaderHtml(currentBook.paragraphs), [currentBook.paragraphs]);
+  const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(null);
+
+  // A crash or a kill between writes leaves a rendered page behind, and each one is
+  // the size of a whole book's markup. Sweep them at launch so they cannot pile up
+  // across sessions.
+  //
+  // Only files named with a timestamp from before this launch are removed. Both
+  // effects start on mount and both are async, so "delete everything" would be a
+  // race the sweep could win — deleting the page this session had just written.
+  // Comparing against the launch time makes that impossible rather than unlikely.
+  useEffect(() => {
+    const directory = FileSystem.documentDirectory;
+
+    if (!directory) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const entries = await FileSystem.readDirectoryAsync(directory);
+        await Promise.all(
+          entries
+            .filter((name) => {
+              const stamp = /^reader-(\d+)\.html$/.exec(name)?.[1];
+              return stamp !== undefined && Number(stamp) < appLaunchedAt;
+            })
+            .map((name) => FileSystem.deleteAsync(`${directory}${name}`, { idempotent: true })),
+        );
+      } catch {
+        // Orphaned files waste space and nothing else; never worth surfacing.
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!FileSystem.documentDirectory) {
+      return;
+    }
+
+    let cancelled = false;
+    const target = `${FileSystem.documentDirectory}reader-${Date.now()}.html`;
+
+    void (async () => {
+      try {
+        await FileSystem.writeAsStringAsync(target, readerHtml);
+
+        if (cancelled) {
+          await FileSystem.deleteAsync(target, { idempotent: true });
+          return;
+        }
+
+        setReaderHtmlUri((previous) => {
+          if (previous) {
+            void FileSystem.deleteAsync(previous, { idempotent: true });
+          }
+          return target;
+        });
+      } catch {
+        // Leaving readerHtmlUri untouched keeps the last good page on screen rather
+        // than blanking the reader over a failed write.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [readerHtml]);
 
   const savedChatTurnIds = useMemo(
     () =>
@@ -4669,13 +4752,25 @@ function ReaderApp() {
 
               {scanStageLabel ? <ScanProgressBanner label={scanStageLabel} /> : null}
 
-              <ReaderSurface
-                html={readerHtml}
-                onClearSelection={clearSelection}
-                onSelectionMessage={handleReaderMessage}
-                paragraphs={currentBook.paragraphs}
-                scrollTarget={scrollTarget}
-              />
+              {/*
+                The page is written to disk before it can be shown, so there is one
+                frame with nothing to load. Rendering the WebView with no source
+                would make it navigate to about:blank and lose its file origin, so
+                it waits instead.
+              */}
+              {readerHtmlUri ? (
+                <ReaderSurface
+                  htmlUri={readerHtmlUri}
+                  onClearSelection={clearSelection}
+                  onSelectionMessage={handleReaderMessage}
+                  paragraphs={currentBook.paragraphs}
+                  scrollTarget={scrollTarget}
+                />
+              ) : (
+                <View style={styles.readerLoading}>
+                  <ActivityIndicator color={colors.clay} size="small" />
+                </View>
+              )}
 
               {selection && !isSelectionSettling ? (
                 <SelectionPanel
@@ -5217,13 +5312,19 @@ function formatOpenedAt(item: LibraryItem) {
 }
 
 function ReaderSurface({
-  html,
+  htmlUri,
   onClearSelection,
   onSelectionMessage,
   paragraphs,
   scrollTarget,
 }: {
-  html: string;
+  // A path, not the markup. WKWebView only grants a page access to local files when
+  // that page was itself loaded from a file:// URL — a page handed over as an HTML
+  // string has no origin, so <img src="file://..."> is blocked. Loading from disk is
+  // what makes book images possible, and it also keeps the whole rendered page out
+  // of the JS heap, which matters here: onContentProcessDidTerminate below exists
+  // because iOS was already killing this WebView under memory pressure.
+  htmlUri: string;
   onClearSelection: () => void;
   onSelectionMessage: (message: ReaderMessage) => void;
   paragraphs: Paragraph[];
@@ -5331,7 +5432,12 @@ function ReaderSurface({
       }}
       originWhitelist={['*']}
       scrollEnabled
-      source={{ html }}
+      source={{ uri: htmlUri }}
+      // Without this the page may read only itself, and every book image 404s.
+      // Scoped to the app's own documents directory, which is where the reader
+      // file, the covers and the book images all live.
+      allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
+      allowFileAccessFromFileURLs
       menuItems={[]}
       suppressMenuItems={[
         'copy',
@@ -6716,6 +6822,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     lineHeight: 17,
     marginTop: 2,
+  },
+  readerLoading: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
   },
   libraryDeleteAccountRow: {
     alignItems: 'center',
