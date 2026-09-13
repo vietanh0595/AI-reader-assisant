@@ -56,6 +56,7 @@ import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
 import { isWholeBookScopeOn } from './src/library/wholeBookScope';
 import { deleteAccount } from './src/auth/deleteAccount';
 import { BookCover } from './src/components/BookCover';
+import { toAbsoluteAppFileUri, toStoredAppFilePath } from './src/library/appFilePath';
 import { fetchWithRetry } from './src/api/fetchWithRetry';
 import { requestBookAsk } from './src/rag/bookAskApi';
 import { buildHistory } from './src/rag/buildHistory';
@@ -993,7 +994,13 @@ function toReaderBook(parsedBook: ParsedEpubBook): ReaderBook {
     // already threaded through selections, citations and note export.
     parsedBook.paragraphs.map((paragraph) =>
       paragraph.imageUri
-        ? { ...paragraph, sourceRef: { imageUri: paragraph.imageUri, source: 'epub' as const } }
+        ? {
+            ...paragraph,
+            sourceRef: {
+              imageUri: toStoredAppFilePath(paragraph.imageUri, FileSystem.documentDirectory),
+              source: 'epub' as const,
+            },
+          }
         : paragraph,
     ),
     'epub',
@@ -1257,7 +1264,9 @@ async function saveCoverImage(
     await FileSystem.writeAsStringAsync(target, cover.base64, {
       encoding: FileSystem.EncodingType.Base64,
     });
-    return target;
+    // Persisted relative: the absolute path contains the install's container id,
+    // which changes with every new build and would leave this pointing nowhere.
+    return toStoredAppFilePath(target, FileSystem.documentDirectory);
   } catch {
     return undefined;
   }
@@ -1267,12 +1276,14 @@ async function saveCoverImage(
 // behind is worth more than the tidiness — but a failure here is still only an
 // orphaned directory, never something to interrupt the reader over.
 async function deleteBookImages(imagesDirectory?: string) {
-  if (!imagesDirectory) {
+  const resolved = toAbsoluteAppFileUri(imagesDirectory, FileSystem.documentDirectory);
+
+  if (!resolved) {
     return;
   }
 
   try {
-    await FileSystem.deleteAsync(imagesDirectory, { idempotent: true });
+    await FileSystem.deleteAsync(resolved, { idempotent: true });
   } catch {
     // Orphaned directory; nothing breaks.
   }
@@ -1281,12 +1292,14 @@ async function deleteBookImages(imagesDirectory?: string) {
 // Covers outlive nothing: when the book goes, so does its art. Failing to delete is
 // not worth surfacing — the file is orphaned, not harmful.
 async function deleteCoverImage(coverUri?: string) {
-  if (!coverUri) {
+  const resolved = toAbsoluteAppFileUri(coverUri, FileSystem.documentDirectory);
+
+  if (!resolved) {
     return;
   }
 
   try {
-    await FileSystem.deleteAsync(coverUri, { idempotent: true });
+    await FileSystem.deleteAsync(resolved, { idempotent: true });
   } catch {
     // Orphaned file; nothing the reader can do about it and nothing breaks.
   }
@@ -2670,7 +2683,13 @@ function renderReaderBlockHtml(paragraph: Paragraph) {
   const blockKind = getReaderBlockKind(paragraph);
 
   if (blockKind === 'image') {
-    const imageUri = paragraph.sourceRef?.imageUri;
+    // Resolved at render rather than at import, for the same reason covers are: the
+    // stored path is relative to a Documents directory whose absolute location moves
+    // with each installed build.
+    const imageUri = toAbsoluteAppFileUri(
+      paragraph.sourceRef?.imageUri,
+      FileSystem.documentDirectory,
+    );
 
     if (!imageUri) {
       return '';
@@ -3209,6 +3228,11 @@ function ReaderApp() {
       // always the right response to a missing token here.)
       const token = await getAccessToken();
       if (!token) {
+        // The sign-in sheet on its own looked like the delete had simply been
+        // ignored — nothing said why a book would not go away.
+        setImportError(
+          `"${itemToDelete.book.title}" has a copy on the server, so deleting it needs you signed in. Sign in and try again.`,
+        );
         setIsSignInOpen(true);
         return;
       }
@@ -3874,7 +3898,14 @@ function ReaderApp() {
         : undefined;
       clearSelection();
       setLibraryItems((currentItems) => [
-        { ...importedItem, coverUri, imagesDirectory: parsedEpub?.imagesDirectory },
+        {
+          ...importedItem,
+          coverUri,
+          imagesDirectory: toStoredAppFilePath(
+            parsedEpub?.imagesDirectory,
+            FileSystem.documentDirectory,
+          ),
+        },
         ...currentItems,
       ]);
       setActiveBookId(importedItem.id);
@@ -4798,6 +4829,10 @@ function ReaderApp() {
               onImportBook={importBook}
               onOpenBook={openLibraryItem}
               onOpenMindMap={(bookId, bookTitle) => { void openMindMap(bookId, bookTitle); }}
+              onOpenWholeBookAi={(bookId) => {
+                openLibraryItem(bookId);
+                setIsWholeBookAiOpen(true);
+              }}
               onScanDocument={scanDocumentPage}
               onSignIn={() => setIsSignInOpen(true)}
               onSignOut={confirmSignOut}
@@ -5161,6 +5196,7 @@ function LibraryScreen({
   onImportBook,
   onOpenBook,
   onOpenMindMap,
+  onOpenWholeBookAi,
   onScanDocument,
   onSignIn,
   onSignOut,
@@ -5179,6 +5215,7 @@ function LibraryScreen({
   onImportBook: () => void;
   onOpenBook: (bookId: string) => void;
   onOpenMindMap: (bookId: string, bookTitle: string) => void;
+  onOpenWholeBookAi: (bookId: string) => void;
   onScanDocument: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -5261,7 +5298,7 @@ function LibraryScreen({
               <View style={styles.libraryBookTop}>
                 <BookCover
                   author={item.book.author}
-                  coverUri={item.coverUri}
+                  coverUri={toAbsoluteAppFileUri(item.coverUri, FileSystem.documentDirectory)}
                   title={item.book.title}
                 />
                 <View style={styles.libraryBookTitleBlock}>
@@ -5326,6 +5363,22 @@ function LibraryScreen({
                 >
                   <Text style={styles.libraryMindMapText}>🗺 Mind Map</Text>
                 </Pressable>
+                {/*
+                  Every other route to the Whole-Book AI sheet is gated on the book
+                  NOT being ready, so once it is, the sheet — and the only way to turn
+                  it off again — became unreachable. The book's own card is where a
+                  reader manages that book, so it belongs here.
+                */}
+                {item.wholeBookAi.status === 'ready' || item.wholeBookAi.status === 'deleting' ? (
+                  <Pressable
+                    accessibilityLabel={`Whole-Book AI settings for ${item.book.title}`}
+                    accessibilityRole="button"
+                    onPress={() => onOpenWholeBookAi(item.id)}
+                    style={({ pressed }) => [styles.libraryMindMapButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.libraryMindMapText}>✨ Book AI</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           );
