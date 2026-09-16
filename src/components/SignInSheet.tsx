@@ -1,13 +1,23 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+// Shown when nothing more specific applies — the sheet opened from the Sign in
+// button rather than from an action that needed an account.
+export const DEFAULT_REASON =
+  'An account is required to import personal books and use the camera to scan pages. '
+  + 'The sample book is always available without signing in.';
+
 export type SignInSheetProps = {
   error: string | null;
   isLoading: boolean;
   onClose: () => void;
   onSignIn: () => void;
+  // Why this sheet opened. A single fixed sentence about importing and scanning was
+  // shown no matter what triggered it, so trying to delete a book explained the
+  // camera — which read as the app having ignored the tap.
+  reason?: string;
 };
 
-export function SignInSheet({ error, isLoading, onClose, onSignIn }: SignInSheetProps) {
+export function SignInSheet({ error, isLoading, onClose, onSignIn, reason }: SignInSheetProps) {
   return (
     <View style={styles.overlay}>
       <View style={styles.sheet}>
@@ -24,8 +34,7 @@ export function SignInSheet({ error, isLoading, onClose, onSignIn }: SignInSheet
         </View>
 
         <Text style={styles.body}>
-          An account is required to import personal books and use the camera to scan pages.
-          The sample book is always available without signing in.
+          {reason ?? DEFAULT_REASON}
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}

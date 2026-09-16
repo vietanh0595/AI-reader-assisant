@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,10 +12,9 @@ from .prompts import BOOK_ANSWER_SYSTEM_PROMPT, build_book_answer_prompt
 
 logger = logging.getLogger(__name__)
 
-_INSUFFICIENT_EVIDENCE_EYEBROW = "Insufficient evidence"
-_INSUFFICIENT_EVIDENCE_BODY = (
-    "The retrieved excerpts do not contain enough information to answer this question."
-)
+from .conversational import INSUFFICIENT_EVIDENCE_BODY as _INSUFFICIENT_EVIDENCE_BODY
+
+_INSUFFICIENT_EVIDENCE_EYEBROW = "Nothing found"
 
 # Evidence is fed to the model as bracketed labels — "[s0-1]" (agent rounds),
 # "[source-1]" (single-shot answerer), "[ctx0]" (current-page tool). Those IDs
@@ -47,6 +46,13 @@ def strip_citation_markers(body: str) -> str:
 
 
 class ModelBookAnswer(BaseModel):
+    # "chat" means the reader's message was not a request for information from the
+    # book — a greeting, thanks, an aside. Such a reply needs no evidence and is
+    # forbidden from asserting anything about the book, so it is safe to return
+    # without citations; that is what keeps this from becoming a hole in the
+    # grounding rule. Defaulted so the many places that construct this for tests do
+    # not have to care; the model is always required to emit it.
+    kind: Literal["answer", "chat"] = "answer"
     supported: bool
     eyebrow: str = Field(max_length=40)
     body: str = Field(max_length=1800)
@@ -82,6 +88,17 @@ class BookAnswerer:
 
         response = self._client.responses.parse(**kwargs)
         parsed: Optional[ModelBookAnswer] = response.output_parsed
+
+        if parsed is not None and parsed.kind == "chat":
+            # Nothing was looked up and nothing is being claimed, so there is nothing
+            # to cite and nothing to refuse.
+            return BookAnswer(
+                request_id=request_id,
+                eyebrow=parsed.eyebrow,
+                body=strip_citation_markers(parsed.body),
+                supported=True,
+                sources=[],
+            )
 
         if parsed is None:
             logger.error(

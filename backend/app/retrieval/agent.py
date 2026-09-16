@@ -43,6 +43,13 @@ evidence does not support an answer. Every tool result is labeled with a bracket
 ID, e.g. "[s0-2] ..." or "[ctx0] ..." — cite only IDs that appeared in a tool result this
 turn. Cite at most 3. Keep the body under 1800 characters.
 
+Not every message is a question about the book. A greeting, a thank-you, an aside
+("oh no", "this is hard"), or anything else that is not a request for information from
+the book: set kind="chat", reply in one or two warm sentences, and invite a question.
+A chat reply must never state a fact about the book's content — you have looked nothing
+up — and must never carry citations. Everything that does ask for information, however
+casually it is phrased, is kind="answer" and follows the rules above.
+
 Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
 "[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
 labels are meaningless to them; the app renders citation_ids as a sources list.
@@ -71,7 +78,14 @@ Guidelines:
 - If the book has nothing relevant, you may still answer from general knowledge —
   say so plainly. In that case set supported=true with no citations.
 - Cite book source IDs only for claims drawn from the book. Cite at most 3.
-- Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
+- Not every message is a question about the book. A greeting, a thank-you, an aside
+("oh no", "this is hard"), or anything else that is not a request for information from
+the book: set kind="chat", reply in one or two warm sentences, and invite a question.
+A chat reply must never state a fact about the book's content — you have looked nothing
+up — and must never carry citations. Everything that does ask for information, however
+casually it is phrased, is kind="answer" and follows the rules above.
+
+Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
   "[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
   labels are meaningless to them; the app renders citation_ids as a sources list.
 - Keep the body under 1800 characters.
@@ -242,6 +256,12 @@ class BookAgent:
     def _finalize(self, request_id: str, parsed: Optional[ModelBookAnswer],
                   evidence_by_id: dict[str, EvidenceItem],
                   *, allow_general_knowledge: bool = False) -> BookAnswer:
+        if parsed is not None and parsed.kind == "chat":
+            # Not a question about the book. Nothing was looked up and nothing is
+            # being claimed, so there is nothing to cite and nothing to refuse.
+            return BookAnswer(request_id=request_id, eyebrow=parsed.eyebrow,
+                              body=strip_citation_markers(parsed.body),
+                              supported=True, sources=[])
         if parsed is None or not parsed.supported:
             return BookAnswer(request_id=request_id, eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
                               body=_INSUFFICIENT_EVIDENCE_BODY, supported=False, sources=[])
