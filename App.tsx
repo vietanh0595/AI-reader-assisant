@@ -2851,6 +2851,13 @@ function ReaderApp() {
   const [pendingMindMapAfterEnable, setPendingMindMapAfterEnable] = useState<{ bookId: string; bookTitle: string } | null>(null);
 
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  // Why the sign-in sheet opened, so it can say so. Cleared when the sheet closes.
+  const [signInReason, setSignInReason] = useState<string | null>(null);
+
+  function openSignIn(reason?: string) {
+    setSignInReason(reason ?? null);
+    setIsSignInOpen(true);
+  }
 
   const assistRequestId = useRef(0);
   const copyFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3122,7 +3129,7 @@ function ReaderApp() {
     const token = await getAccessToken();
 
     if (!token) {
-      setIsSignInOpen(true);
+      openSignIn('Deleting your account needs you signed in, so we know whose account to delete.');
       return;
     }
 
@@ -3163,7 +3170,7 @@ function ReaderApp() {
     const token = await getAccessToken();
 
     if (!token) {
-      setIsSignInOpen(true);
+      openSignIn(`Removing the uploaded copy of “${item.book.title}” from our servers needs you signed in.`);
       return;
     }
 
@@ -3228,12 +3235,9 @@ function ReaderApp() {
       // always the right response to a missing token here.)
       const token = await getAccessToken();
       if (!token) {
-        // The sign-in sheet on its own looked like the delete had simply been
-        // ignored — nothing said why a book would not go away.
-        setImportError(
-          `"${itemToDelete.book.title}" has a copy on the server, so deleting it needs you signed in. Sign in and try again.`,
-        );
-        setIsSignInOpen(true);
+        // The sheet used to explain importing and scanning no matter what opened it,
+        // so a refused delete read as the tap being ignored.
+        openSignIn(`“${itemToDelete.book.title}” has a copy on our servers, so deleting it needs you signed in.`);
         return;
       }
 
@@ -3855,7 +3859,7 @@ function ReaderApp() {
   async function importBook() {
     if (!isAuthenticated) {
       setPendingAuthenticatedAction('import');
-      setIsSignInOpen(true);
+      openSignIn('Importing a book of your own needs an account. The sample book is always available without signing in.');
       return;
     }
 
@@ -3927,7 +3931,7 @@ function ReaderApp() {
   async function scanDocumentPage() {
     if (!isAuthenticated) {
       setPendingAuthenticatedAction('scan');
-      setIsSignInOpen(true);
+      openSignIn('Scanning a page needs an account. The sample book is always available without signing in.');
       return;
     }
 
@@ -3976,7 +3980,7 @@ function ReaderApp() {
         setScanStage('uploading');
         const ocrToken = await getAccessToken();
         if (!ocrToken) {
-          setIsSignInOpen(true);
+          openSignIn('Your session ended while the page was being scanned. Sign in to finish it.');
           throw new Error('Your sign-in has expired. Please sign in again to scan a page.');
         }
         ocrResult = await requestOcr({ imageDataUrl: preparedImage.dataUrl }, ocrToken);
@@ -4434,7 +4438,7 @@ function ReaderApp() {
       setAssistError('Your sign-in has expired. Please sign in again to ask the book.');
       setPendingAssistRetry(null);
       setIsThreadOpen(false);
-      setIsSignInOpen(true);
+      openSignIn('Asking questions across a whole book needs you signed in.');
       return;
     }
 
@@ -4518,7 +4522,7 @@ function ReaderApp() {
       if (!options.silent) {
         // Close the Book AI sheet first so the sign-in prompt isn't hidden behind it.
         setIsWholeBookAiOpen(false);
-        setIsSignInOpen(true);
+        openSignIn('Setting up Whole-Book AI needs an account, because the book is indexed on our servers.');
       }
       return;
     }
@@ -4762,7 +4766,7 @@ function ReaderApp() {
 
       if (!token) {
         setMindMapOpen(false);
-        setIsSignInOpen(true);
+        openSignIn('Building a mind map needs an account, because it is generated on our servers.');
         return;
       }
 
@@ -5087,8 +5091,10 @@ function ReaderApp() {
         <SignInSheet
           error={authError}
           isLoading={isSigningIn}
+          reason={signInReason ?? undefined}
           onClose={() => {
             setIsSignInOpen(false);
+            setSignInReason(null);
             setPendingAuthenticatedAction(null);
           }}
           onSignIn={async () => {

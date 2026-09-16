@@ -317,3 +317,43 @@ def test_agent_echoes_reasoning_items_to_next_round():
                  selected_text=None, current_reading_order=0, include_whole_book=True)
     second_input = client.calls[1]["input"]
     assert reasoning in second_input  # reasoning item echoed back
+
+
+def test_a_message_that_is_not_a_question_gets_a_real_reply():
+    # "hi", "oh no", "thanks" — anything that is not a request for information from
+    # the book. Answering those with an evidence failure reads as the app being
+    # broken rather than as having no answer. No word list could cover them, so the
+    # model decides and writes the reply itself.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="chat", supported=False, eyebrow="Hello",
+            body="Is everything okay? Ask me anything about the book.",
+            citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="oh no", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True)
+
+    assert answer.supported is True
+    assert answer.body == "Is everything okay? Ask me anything about the book."
+    assert answer.sources == []
+
+
+def test_chatting_does_not_become_a_way_to_answer_without_evidence():
+    # The whole safety of this is that a chat reply asserts nothing about the book.
+    # A real question with no evidence behind it must still be refused, exactly as
+    # before — otherwise 'chat' becomes a hole in the grounding rule.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="Answer",
+            body="The book says derivatives are safe.", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="are derivatives safe?",
+                          history=[], selected_text=None, current_reading_order=0,
+                          include_whole_book=True)
+
+    assert answer.supported is False
+    assert "derivatives are safe" not in answer.body

@@ -86,6 +86,7 @@ def test_citations_capped_at_three():
     # the model returning 4 IDs (a misbehaving model scenario)
     client = MagicMock()
     parsed = MagicMock(spec=ModelBookAnswer)
+    parsed.kind = "answer"
     parsed.supported = True
     parsed.eyebrow = "Book answer"
     parsed.body = "Some body"
