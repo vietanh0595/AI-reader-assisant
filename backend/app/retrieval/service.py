@@ -122,6 +122,9 @@ class RetrievalService:
 
         return EvidenceSet(items=items, supported=True)
 
+    def list_chapter_titles(self, user_id, book_id) -> list[str]:
+        return self._repo.list_chapter_titles(user_id, book_id)
+
     def read_current_context(
         self,
         user_id: UUID,

@@ -88,9 +88,23 @@ def ask_book(
         )
 
     agent = _build_agent(request)
+    # The model is told what book it is holding — otherwise a reply to a message that
+    # is not a question has nothing to be specific about, and being specific anyway
+    # means inventing. Straight off the repository rather than the retrieval service:
+    # this is a plain lookup of chapter names and needs no embedder. Never fatal —
+    # orientation is a nicety, not the answer.
+    try:
+        chapter_titles = RetrievalRepository(factory).list_chapter_titles(user.id, book_id)
+    except Exception:  # noqa: BLE001 - orientation is optional by design
+        logger.warning("Chapter orientation unavailable for book %s", book_id, exc_info=True)
+        chapter_titles = []
+
     answer = agent.answer(
         user_id=user.id,
         book_id=book_id,
+        book_title=book.title,
+        book_author=book.author,
+        chapter_titles=chapter_titles,
         question=ask_request.question,
         history=[t.model_dump() for t in ask_request.history],
         selected_text=ask_request.selected_text,
