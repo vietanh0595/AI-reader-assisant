@@ -39,6 +39,12 @@ class FakeOpenAI:
         self.responses = self  # so .responses.parse works
 
     def parse(self, **kwargs):
+        # Snapshot the input list. The agent appends to the same list across rounds,
+        # so recording the reference made calls[0] show whatever the *last* call
+        # sent — which quietly turned assertions about the first request into
+        # assertions about the final one.
+        if isinstance(kwargs.get("input"), list):
+            kwargs = {**kwargs, "input": list(kwargs["input"])}
         self.calls.append(kwargs)
         return self._responses.pop(0)
 
@@ -168,9 +174,13 @@ def test_agent_applies_spoiler_cap_when_book_so_far():
 
 
 def test_agent_drops_invalid_citation_ids():
+    # Answering with no evidence now earns one push back to search before the
+    # refusal, so the model's reply is queued twice.
+    invented = ModelBookAnswer(supported=True, eyebrow="E", body="B",
+                               citation_ids=["does-not-exist"])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            supported=True, eyebrow="E", body="B", citation_ids=["does-not-exist"])),
+        FakeResponse(output=[], output_parsed=invented),
+        FakeResponse(output=[], output_parsed=invented),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
     answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
@@ -196,9 +206,12 @@ def test_agent_stops_at_round_cap():
 
 
 def test_agent_includes_history_and_selection_in_input():
+    uncited = ModelBookAnswer(supported=True, eyebrow="E", body="B", citation_ids=[])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            supported=True, eyebrow="E", body="B", citation_ids=[])),
+        # Queued twice: answering without calling any tool earns one push back to
+        # search before the refusal. This test only reads calls[0].
+        FakeResponse(output=[], output_parsed=uncited),
+        FakeResponse(output=[], output_parsed=uncited),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
     agent.answer(
@@ -215,9 +228,12 @@ def test_agent_includes_history_and_selection_in_input():
 
 
 def test_agent_phrases_quoted_answer_honestly_not_as_book_text():
+    uncited = ModelBookAnswer(supported=True, eyebrow="E", body="B", citation_ids=[])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            supported=True, eyebrow="E", body="B", citation_ids=[])),
+        # Queued twice: answering without calling any tool earns one push back to
+        # search before the refusal. This test only reads calls[0].
+        FakeResponse(output=[], output_parsed=uncited),
+        FakeResponse(output=[], output_parsed=uncited),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
     agent.answer(
@@ -235,9 +251,12 @@ def test_agent_phrases_quoted_answer_honestly_not_as_book_text():
 
 
 def test_agent_prefers_selected_text_over_quoted_answer_when_both_present():
+    uncited = ModelBookAnswer(supported=True, eyebrow="E", body="B", citation_ids=[])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            supported=True, eyebrow="E", body="B", citation_ids=[])),
+        # Queued twice: answering without calling any tool earns one push back to
+        # search before the refusal. This test only reads calls[0].
+        FakeResponse(output=[], output_parsed=uncited),
+        FakeResponse(output=[], output_parsed=uncited),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
     agent.answer(
@@ -253,9 +272,10 @@ def test_agent_prefers_selected_text_over_quoted_answer_when_both_present():
 
 def test_grounded_mode_uses_strict_prompt_and_refuses_without_sources():
     # Default (allow_general_knowledge=False): no citations -> refuse.
+    uncited = ModelBookAnswer(supported=True, eyebrow="E", body="B", citation_ids=[])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            supported=True, eyebrow="E", body="B", citation_ids=[])),
+        FakeResponse(output=[], output_parsed=uncited),
+        FakeResponse(output=[], output_parsed=uncited),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
     answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
@@ -344,10 +364,11 @@ def test_chatting_does_not_become_a_way_to_answer_without_evidence():
     # The whole safety of this is that a chat reply asserts nothing about the book.
     # A real question with no evidence behind it must still be refused, exactly as
     # before — otherwise 'chat' becomes a hole in the grounding rule.
+    ungrounded = ModelBookAnswer(kind="answer", supported=True, eyebrow="Answer",
+                                 body="The book says derivatives are safe.", citation_ids=[])
     client = FakeOpenAI([
-        FakeResponse(output=[], output_parsed=ModelBookAnswer(
-            kind="answer", supported=True, eyebrow="Answer",
-            body="The book says derivatives are safe.", citation_ids=[])),
+        FakeResponse(output=[], output_parsed=ungrounded),
+        FakeResponse(output=[], output_parsed=ungrounded),
     ])
     agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
 
@@ -391,3 +412,86 @@ def test_a_book_with_no_chapter_titles_still_works():
                           book_title="A Scanned Page", book_author="Unknown", chapter_titles=[])
 
     assert answer.body == "Hi!"
+
+
+def test_answering_a_book_question_without_looking_is_sent_back_to_search():
+    # Observed in production: after a few conversational turns the model stopped
+    # calling search_book and answered Alice from its own memory of the book, then
+    # invented a citation id to satisfy the format. The grounding guard caught the
+    # fake id and refused, so the reader was told nothing could be found — for a
+    # question the book plainly answers.
+    #
+    # The prompt already tells it to search. Telling it more firmly is not a fix;
+    # requiring it is.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="Answer",
+            body="Alice fell down a rabbit-hole.", citation_ids=["s0-0"])),
+        FakeResponse(output=[FakeFunctionCall(name="search_book",
+                                              arguments='{"query":"where alice fell"}',
+                                              call_id="c0")],
+                     output_parsed=None),
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="Answer",
+            body="Alice fell down a rabbit-hole.", citation_ids=["s1-0"])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID,
+                          question="what place did alice get lost in?", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True)
+
+    assert answer.supported is True
+    assert answer.sources != []
+
+
+def test_the_nudge_happens_once_and_then_gives_up():
+    # A model that will not search must not loop. One push, then the ordinary
+    # refusal — which is honest, because nothing was ever retrieved.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="A", body="B", citation_ids=["made-up"])),
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="A", body="B", citation_ids=["made-up"])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True)
+
+    assert answer.supported is False
+    assert client.calls and len(client.calls) == 2
+
+
+def test_small_talk_is_never_sent_back_to_search():
+    # "hi" needs no evidence. Pushing it toward the book would undo the whole
+    # conversational behaviour and spend a retrieval round on a greeting.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="chat", supported=False, eyebrow="Hi", body="Hello!", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="hi", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True)
+
+    assert answer.body == "Hello!"
+    assert len(client.calls) == 1
+
+
+def test_general_knowledge_mode_may_still_answer_without_the_book():
+    # Hybrid mode exists precisely so the model can answer from outside the book
+    # when the book has nothing. Requiring a search there would break it.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="answer", supported=True, eyebrow="Real-world",
+            body="From general knowledge: ...", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="q", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True,
+                          allow_general_knowledge=True)
+
+    assert answer.supported is True
+    assert len(client.calls) == 1
