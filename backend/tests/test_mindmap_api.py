@@ -32,8 +32,12 @@ def _make_auth_app(app_settings: Settings, fake_user: User) -> FastAPI:
 
 
 @pytest.fixture
-def fake_user() -> User:
-    return _make_fake_user()
+def fake_user(committed_user) -> User:
+    # A real row, not an invented id. Charging the daily allowance writes a
+    # daily_usage row keyed to users.id, so a user that exists only in the test's
+    # imagination now fails a foreign key. In production get_current_user always
+    # provisions the row, so this brings the fixture in line with reality.
+    return _make_fake_user(committed_user)
 
 
 @pytest.fixture

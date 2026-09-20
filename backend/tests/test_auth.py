@@ -609,3 +609,46 @@ def test_deleting_one_account_leaves_another_users_books_alone(
             select(Book).where(Book.user_id == committed_other_user)
         ).scalars().all()
         assert [book.title for book in survivors] == ["Theirs"]
+
+
+def test_optional_user_is_none_without_a_token(test_app):
+    # /ai/assist must serve guests, so identity there is optional. Rejecting an
+    # anonymous caller would remove the try-before-signing-in moment entirely.
+    from backend.app.auth.dependencies import get_optional_user
+
+    request = SimpleNamespace(app=test_app)
+
+    assert get_optional_user(request, None) is None
+
+
+def test_optional_user_is_none_when_the_token_is_rubbish(test_app, monkeypatch):
+    # A bad token makes someone a guest rather than an error. They still get the
+    # guest allowance, and an expired session does not turn Explain into a failure.
+    from backend.app.auth import dependencies
+    from backend.app.auth.jwt import InvalidAuthTokenError
+
+    class Rejecting:
+        def validate(self, _token):
+            raise InvalidAuthTokenError("nope")
+
+    test_app.state.jwt_validator = Rejecting()
+    credentials = SimpleNamespace(credentials="rubbish")
+
+    assert dependencies.get_optional_user(SimpleNamespace(app=test_app), credentials) is None
+
+
+def test_optional_user_returns_the_reader_when_the_token_is_good(test_app, monkeypatch):
+    from backend.app.auth import dependencies
+    from backend.app.db.models import User
+
+    resolved = User()
+
+    class Accepting:
+        def validate(self, _token):
+            return {"sub": "abc"}
+
+    test_app.state.jwt_validator = Accepting()
+    monkeypatch.setattr(dependencies, "resolve_identity", lambda _session, _claims: resolved)
+    credentials = SimpleNamespace(credentials="good")
+
+    assert dependencies.get_optional_user(SimpleNamespace(app=test_app), credentials) is resolved
