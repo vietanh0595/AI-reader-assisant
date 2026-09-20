@@ -237,6 +237,32 @@ class RetrievalRepository:
             for row in rows
         ]
 
+    def list_chapter_titles(self, user_id: UUID, book_id: UUID, limit: int = 40) -> list[str]:
+        """The book's chapter names, in reading order, for orienting the model.
+
+        Not evidence and never used as such — it tells the model what the book is,
+        which is what lets a reply to "hi" name a real chapter instead of inventing
+        one. Distinct and ordered by where each chapter first appears, so the list
+        reads like a contents page rather than a bag of strings.
+        """
+        sql = text("""
+            SELECT bb.chapter_title
+            FROM book_blocks bb
+            JOIN index_versions iv ON iv.id = bb.index_version_id
+            JOIN books b ON b.active_index_version_id = iv.id
+            WHERE b.id = :book_id
+              AND b.user_id = :user_id
+              AND bb.chapter_title IS NOT NULL
+              AND bb.chapter_title <> ''
+            GROUP BY bb.chapter_title
+            ORDER BY MIN(bb.reading_order)
+            LIMIT :limit
+        """)
+        params = {"book_id": str(book_id), "user_id": str(user_id), "limit": limit}
+        with self._factory() as session:
+            rows = session.execute(sql, params).fetchall()
+        return [row[0] for row in rows]
+
     def read_context_window(
         self,
         user_id: UUID,

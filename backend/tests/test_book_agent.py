@@ -357,3 +357,37 @@ def test_chatting_does_not_become_a_way_to_answer_without_evidence():
 
     assert answer.supported is False
     assert "derivatives are safe" not in answer.body
+
+
+def test_the_model_is_told_which_book_it_is_in():
+    # Without this the model knows only the conversation — no title, no chapters —
+    # so a reply to "hi" can only be a generic pleasantry. Being specific about a
+    # book it has been told nothing about is exactly how a model invents chapters.
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="chat", supported=False, eyebrow="Hello", body="Hi!", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="hi", history=[],
+                 selected_text=None, current_reading_order=0, include_whole_book=True,
+                 book_title="Investing 101", book_author="Michele Cagan",
+                 chapter_titles=["Stocks", "Bonds", "Mutual Funds"])
+
+    sent = str(client.calls[0])
+    assert "Investing 101" in sent
+    assert "Mutual Funds" in sent
+
+
+def test_a_book_with_no_chapter_titles_still_works():
+    client = FakeOpenAI([
+        FakeResponse(output=[], output_parsed=ModelBookAnswer(
+            kind="chat", supported=False, eyebrow="Hello", body="Hi!", citation_ids=[])),
+    ])
+    agent = BookAgent(client=client, model="gpt-5-mini", retrieval=FakeRetrieval())
+
+    answer = agent.answer(user_id=USER_ID, book_id=BOOK_ID, question="hi", history=[],
+                          selected_text=None, current_reading_order=0, include_whole_book=True,
+                          book_title="A Scanned Page", book_author="Unknown", chapter_titles=[])
+
+    assert answer.body == "Hi!"

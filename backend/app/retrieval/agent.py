@@ -19,6 +19,8 @@ from .models import BookAnswer, EvidenceItem, EvidenceSet
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 3
+# Enough to convey the shape of a book without burying the conversation.
+MAX_ORIENTATION_CHAPTERS = 40
 
 STANDALONE_QUERY_GUIDANCE = (
     'Write a focused, standalone query — resolve pronouns ("it", "this") and vague '
@@ -43,12 +45,34 @@ evidence does not support an answer. Every tool result is labeled with a bracket
 ID, e.g. "[s0-2] ..." or "[ctx0] ..." — cite only IDs that appeared in a tool result this
 turn. Cite at most 3. Keep the body under 1800 characters.
 
-Not every message is a question about the book. A greeting, a thank-you, an aside
-("oh no", "this is hard"), or anything else that is not a request for information from
-the book: set kind="chat", reply in one or two warm sentences, and invite a question.
+Not every message is a question about the book. Work out what the reader actually
+means from the message, the conversation so far, and the book you were told you are
+helping with. Then:
+
+- Asking about the book, however casually phrased: kind="answer". Follow the rules
+  above. Do not redirect someone who has asked a real question.
+- A short message is often a continuation, not small talk. "why?", "go on", "the
+  second one" after an answer are follow-up questions — read them against the previous
+  turn and answer them.
+- Greetings, thanks, reactions, asides ("oh no", "this is hard"): kind="chat". Reply
+  the way a person would — briefly, to what they actually said — and let the
+  conversation continue.
+- Too vague to act on: kind="chat". Say so plainly and ask what they meant. Do not
+  invent a question they did not ask.
+- Clearly about something other than this book: kind="chat". Say briefly that you can
+  only help with this book, without pretending it has an answer.
+- Not intelligible at all: kind="chat". Ask them to rephrase, rather than emitting an
+  error.
+
 A chat reply must never state a fact about the book's content — you have looked nothing
-up — and must never carry citations. Everything that does ask for information, however
-casually it is phrased, is kind="answer" and follows the rules above.
+up — and must never carry citations.
+
+When you point the reader back at the book, vary how you say it and make it specific:
+name one of the chapters you were given. Never invent a character, theme, event or
+passage; the chapter list is all you know, and anything beyond it you would be making
+up. Never repeat the same invitation twice in a conversation, and do not append "ask me
+about the book" to every reply — often the right response is just to answer what they
+said.
 
 Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
 "[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
@@ -78,12 +102,34 @@ Guidelines:
 - If the book has nothing relevant, you may still answer from general knowledge —
   say so plainly. In that case set supported=true with no citations.
 - Cite book source IDs only for claims drawn from the book. Cite at most 3.
-- Not every message is a question about the book. A greeting, a thank-you, an aside
-("oh no", "this is hard"), or anything else that is not a request for information from
-the book: set kind="chat", reply in one or two warm sentences, and invite a question.
+- Not every message is a question about the book. Work out what the reader actually
+means from the message, the conversation so far, and the book you were told you are
+helping with. Then:
+
+- Asking about the book, however casually phrased: kind="answer". Follow the rules
+  above. Do not redirect someone who has asked a real question.
+- A short message is often a continuation, not small talk. "why?", "go on", "the
+  second one" after an answer are follow-up questions — read them against the previous
+  turn and answer them.
+- Greetings, thanks, reactions, asides ("oh no", "this is hard"): kind="chat". Reply
+  the way a person would — briefly, to what they actually said — and let the
+  conversation continue.
+- Too vague to act on: kind="chat". Say so plainly and ask what they meant. Do not
+  invent a question they did not ask.
+- Clearly about something other than this book: kind="chat". Say briefly that you can
+  only help with this book, without pretending it has an answer.
+- Not intelligible at all: kind="chat". Ask them to rephrase, rather than emitting an
+  error.
+
 A chat reply must never state a fact about the book's content — you have looked nothing
-up — and must never carry citations. Everything that does ask for information, however
-casually it is phrased, is kind="answer" and follows the rules above.
+up — and must never carry citations.
+
+When you point the reader back at the book, vary how you say it and make it specific:
+name one of the chapters you were given. Never invent a character, theme, event or
+passage; the chapter list is all you know, and anything beyond it you would be making
+up. Never repeat the same invitation twice in a conversation, and do not append "ask me
+about the book" to every reply — often the right response is just to answer what they
+said.
 
 Put source IDs in the citation_ids field ONLY. Never write a bracketed ID such as
   "[s0-1]" or "[ctx0]" into the body — the reader sees the body as prose and those
@@ -133,11 +179,17 @@ class BookAgent:
                history: list[dict], selected_text: Optional[str],
                current_reading_order: int, include_whole_book: bool,
                allow_general_knowledge: bool = False,
-               quoted_answer: Optional[str] = None) -> BookAnswer:
+               quoted_answer: Optional[str] = None,
+               book_title: Optional[str] = None,
+               book_author: Optional[str] = None,
+               chapter_titles: Optional[list[str]] = None) -> BookAnswer:
         request_id = str(uuid.uuid4())
         max_reading_order = None if include_whole_book else current_reading_order
         evidence_by_id: dict[str, EvidenceItem] = {}
-        input_items: list[Any] = self._build_input(history, question, selected_text, quoted_answer)
+        input_items: list[Any] = self._build_input(
+            history, question, selected_text, quoted_answer,
+            book_title=book_title, book_author=book_author, chapter_titles=chapter_titles,
+        )
 
         for round_index in range(MAX_TOOL_ROUNDS):
             response = self._call(input_items, with_tools=True,
@@ -173,8 +225,31 @@ class BookAgent:
                               allow_general_knowledge=allow_general_knowledge)
 
     def _build_input(self, history: list[dict], question: str, selected_text: Optional[str],
-                      quoted_answer: Optional[str] = None) -> list[Any]:
+                      quoted_answer: Optional[str] = None, *,
+                      book_title: Optional[str] = None,
+                      book_author: Optional[str] = None,
+                      chapter_titles: Optional[list[str]] = None) -> list[Any]:
         items: list[Any] = []
+        # Which book this is. Without it the model sees only the conversation, so a
+        # reply to "hi" can be nothing but a generic pleasantry — and telling it to be
+        # specific anyway is how a model invents chapters that do not exist.
+        #
+        # Labelled as orientation, not evidence, and capped: a long book's contents
+        # page would crowd out the conversation, and the model does not need all of it
+        # to know what it is holding.
+        if book_title:
+            lines = [f"You are helping with the book “{book_title}”"]
+            if book_author:
+                lines[0] += f" by {book_author}"
+            lines[0] += "."
+            if chapter_titles:
+                shown = chapter_titles[:MAX_ORIENTATION_CHAPTERS]
+                lines.append("Its chapters include: " + "; ".join(shown) + ".")
+            lines.append(
+                "This is orientation only — it tells you what the book is, not what it "
+                "says. Never present it as an answer or cite it as evidence."
+            )
+            items.append({"role": "system", "content": "\n".join(lines)})
         for turn in history:
             role = turn["role"] if isinstance(turn, dict) else turn.role
             content = turn["content"] if isinstance(turn, dict) else turn.content
