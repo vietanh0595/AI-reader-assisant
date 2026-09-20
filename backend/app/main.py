@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import logging.config
+from datetime import datetime, timezone
 from time import perf_counter
+from typing import Optional
 
 logging.config.dictConfig({
     "version": 1,
@@ -13,16 +15,19 @@ logging.config.dictConfig({
 })
 
 import sentry_sdk
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from .auth.dependencies import get_current_user
+from .auth.dependencies import get_current_user, get_optional_user
 from .auth.jwt import JwtValidator
 from .config import Settings, get_settings
 from .db.models import User
 from .db.session import create_session_factory
 from .openai_assistant import AssistantConfigurationError, AssistantServiceError, OpenAIAssistant
-from .rate_limit import check_ai_assist_rate_limit
+from .guest_quota import GuestDailyQuota
+from .quota_dependency import enforce_daily_quota
+from .quota_store import DailyQuotaStore
+from .rate_limit import check_ai_assist_rate_limit, get_client_ip
 from .routers.auth import router as auth_router
 from .routers.book_ask import router as book_ask_router
 from .routers.indexing import router as indexing_router
@@ -67,6 +72,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.assistant = assistant
     app.state.session_factory = session_factory
     app.state.jwt_validator = jwt_validator
+    # Two allowances, two homes. The signed-in count is in the database because the
+    # process restarts on every deploy and an allowance that clears when you ship is
+    # not an allowance. The guest count stays in memory: a row per anonymous request
+    # would be its own abuse vector, and losing a small trial allowance costs nothing.
+    app.state.user_quota = DailyQuotaStore(session_factory)
+    app.state.guest_quota = GuestDailyQuota(app_settings.daily_quota_per_guest)
     app.add_middleware(
         CORSMiddleware,
         allow_credentials=False,
@@ -87,8 +98,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/ai/assist", response_model=AssistResponse)
     def assist(
         request: AssistRequest,
+        http_request: Request,
         _rate_limit: None = Depends(check_ai_assist_rate_limit),
+        # Optional, not required: a guest is meant to be able to try this on the
+        # sample book, and that first moment is doing real work at exactly the point
+        # a stranger decides whether to bother. Until now this endpoint had no
+        # identity at all, so it could be called by anyone, indefinitely.
+        user: Optional[User] = Depends(get_optional_user),
     ) -> AssistResponse:
+        enforce_daily_quota(
+            user_id=user.id if user else None,
+            address=get_client_ip(http_request),
+            user_quota=http_request.app.state.user_quota,
+            guest_quota=http_request.app.state.guest_quota,
+            limit=app_settings.daily_quota_per_user,
+            now=datetime.now(timezone.utc),
+        )
         try:
             return assistant.generate(request)
         except AssistantConfigurationError as exc:

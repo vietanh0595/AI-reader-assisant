@@ -5,7 +5,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from datetime import datetime, timezone
+
 from ..auth.dependencies import get_current_user
+from ..quota_dependency import enforce_daily_quota
+from ..rate_limit import get_client_ip
 from ..db.models import User
 from ..indexing.models import Book, IndexVersionStatus
 from ..retrieval.repository import RetrievalRepository
@@ -86,6 +90,18 @@ def ask_book(
             status_code=status.HTTP_409_CONFLICT,
             detail={"status": current_status, "message": "Index is not ready."},
         )
+
+    # Charged before the work, not after: the cost is the model call, so a refusal
+    # has to come first to be worth anything. Always a signed-in reader here — the
+    # route requires authentication — so this never touches the guest allowance.
+    enforce_daily_quota(
+        user_id=user.id,
+        address=get_client_ip(request),
+        user_quota=request.app.state.user_quota,
+        guest_quota=request.app.state.guest_quota,
+        limit=request.app.state.settings.daily_quota_per_user,
+        now=datetime.now(timezone.utc),
+    )
 
     agent = _build_agent(request)
     # The model is told what book it is holding — otherwise a reply to a message that

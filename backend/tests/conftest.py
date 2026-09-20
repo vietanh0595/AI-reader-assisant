@@ -93,6 +93,11 @@ def app_settings() -> Settings:
         mindmap_consolidation_model="gpt-4o",
         db_pool_size=3,
         db_max_overflow=2,
+        # Deliberately generous here: a test that trips the daily allowance by
+        # accident fails somewhere unrelated and is miserable to diagnose. The
+        # quota's own tests inject the limits they mean to exercise.
+        daily_quota_per_user=1000,
+        daily_quota_per_guest=1000,
         sentry_dsn=None,
     )
 

@@ -5,7 +5,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
+from datetime import datetime, timezone
+
 from ..auth.dependencies import get_current_user
+from ..quota_dependency import enforce_daily_quota
+from ..rate_limit import get_client_ip
 from ..db.models import User
 from ..indexing.models import Book
 from ..mindmap.consolidator import MindMapConsolidator
@@ -45,6 +49,18 @@ def generate_mindmap(
     request: Request,
     user: User = Depends(get_current_user),
 ) -> dict:
+    # Charged before initiating, not in the background task: by the time that runs
+    # the response has already been sent, so a refusal there would be invisible.
+    # A mind map is many model calls, which is why it counts at all.
+    enforce_daily_quota(
+        user_id=user.id,
+        address=get_client_ip(request),
+        user_quota=request.app.state.user_quota,
+        guest_quota=request.app.state.guest_quota,
+        limit=request.app.state.settings.daily_quota_per_user,
+        now=datetime.now(timezone.utc),
+    )
+
     service = _build_mindmap_service(request)
     try:
         service.initiate(user_id=user.id, book_id=book_id)

@@ -10,6 +10,12 @@ from dotenv import load_dotenv
 
 
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
+# Generous enough that a real reading session never meets it — a quota that fires
+# on a genuine reader reads as the app being broken, and the spend it guards is a
+# few pence a fortnight. The guest number is sized to let someone feel what the app
+# does without it being usable as a free service.
+DEFAULT_DAILY_QUOTA_PER_USER = 50
+DEFAULT_DAILY_QUOTA_PER_GUEST = 10
 DEFAULT_REASONING_EFFORT = "minimal"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://reader:reader@localhost:5432/reader"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
@@ -68,6 +74,12 @@ class Settings:
     rag_context_max_chars: int
     mindmap_extraction_model: str
     mindmap_consolidation_model: str
+    # Daily AI allowances. Environment variables rather than constants so the
+    # numbers can be moved from the dashboard the moment real usage disagrees with
+    # the guess, without a deploy. Counts are stored; limits are not, so raising one
+    # unblocks an affected reader immediately.
+    daily_quota_per_user: int
+    daily_quota_per_guest: int
     db_pool_size: int
     db_max_overflow: int
     sentry_dsn: Optional[str]
@@ -95,6 +107,12 @@ class Settings:
             rag_context_max_chars=int(os.getenv("RAG_CONTEXT_MAX_CHARS", str(DEFAULT_RAG_CONTEXT_MAX_CHARS))),
             mindmap_extraction_model=os.getenv("MINDMAP_EXTRACTION_MODEL", DEFAULT_MINDMAP_EXTRACTION_MODEL).strip() or DEFAULT_MINDMAP_EXTRACTION_MODEL,
             mindmap_consolidation_model=os.getenv("MINDMAP_CONSOLIDATION_MODEL", DEFAULT_MINDMAP_CONSOLIDATION_MODEL).strip() or DEFAULT_MINDMAP_CONSOLIDATION_MODEL,
+            daily_quota_per_user=int(
+                os.getenv("DAILY_QUOTA_PER_USER", str(DEFAULT_DAILY_QUOTA_PER_USER))
+            ),
+            daily_quota_per_guest=int(
+                os.getenv("DAILY_QUOTA_PER_GUEST", str(DEFAULT_DAILY_QUOTA_PER_GUEST))
+            ),
             db_pool_size=int(os.getenv("DB_POOL_SIZE", str(DEFAULT_DB_POOL_SIZE))),
             db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", str(DEFAULT_DB_MAX_OVERFLOW))),
             sentry_dsn=_read_optional_env("SENTRY_DSN"),

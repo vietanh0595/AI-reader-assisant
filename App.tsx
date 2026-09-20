@@ -50,6 +50,7 @@ import { resolveMindMapBookId, shouldStartMindMapGeneration } from './src/rag/mi
 import type { MindMapData, MindMapStatus } from './src/rag/mindmapTypes';
 import type { BookSource } from './src/rag/bookAskTypes';
 import { describeRequestFailure } from './src/api/describeRequestFailure';
+import { readApiErrorInfo } from './src/api/apiErrorMessage';
 import { ErrorInsightCard } from './src/components/ErrorInsightCard';
 import { buildDeleteBookPrompt } from './src/library/deleteBookPrompt';
 import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
@@ -2216,23 +2217,10 @@ function isOcrTextBlockResponse(value: unknown): value is OcrTextBlockResponse {
 }
 
 async function readResponseError(response: Response) {
-  const responseText = await response.text();
-
-  if (!responseText) {
-    return null;
-  }
-
-  try {
-    const parsedBody: unknown = JSON.parse(responseText);
-
-    if (isRecord(parsedBody) && typeof parsedBody.detail === 'string') {
-      return parsedBody.detail;
-    }
-  } catch {
-    return responseText;
-  }
-
-  return responseText;
+  // detail is a plain string for most errors and a structured object for the daily
+  // allowance, which carries the message plus whether the caller had an account.
+  // Reading only the string form showed the reader raw JSON.
+  return readApiErrorInfo(await response.text())?.message ?? null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
