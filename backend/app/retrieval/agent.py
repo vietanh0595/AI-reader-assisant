@@ -195,6 +195,15 @@ class BookAgent:
             response = self._call(input_items, with_tools=True,
                                   allow_general_knowledge=allow_general_knowledge)
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
+            # Shapes and decisions only, never the question or the book text: the
+            # privacy policy says neither is stored, and a log is storage. Without
+            # this a refusal is a black box — there is no way to tell whether the
+            # model searched the book and found nothing, or never searched at all.
+            logger.info(
+                "ask round=%d request=%s tool_calls=%s evidence=%d",
+                round_index, request_id,
+                [getattr(call, "name", "?") for call in calls], len(evidence_by_id),
+            )
             if not calls:
                 return self._finalize(request_id, response.output_parsed, evidence_by_id,
                                       allow_general_knowledge=allow_general_knowledge)
@@ -318,6 +327,13 @@ class BookAgent:
                     sid = f"s{round_index}-{i}"
                     evidence_by_id[sid] = self._rekey(item, sid)
                     lines.append(f"[{sid}] {item.raw_text}")
+                # The count, never the query or the passages. A search that returns
+                # nothing and a search that was never run look identical from the
+                # outside, and they need completely different fixes.
+                logger.info(
+                    "ask search round=%d whole_book=%s hits=%d",
+                    round_index, max_reading_order is None, len(evidence.items),
+                )
                 return "\n\n".join(lines) if lines else "No matching passages found."
             return f"Unknown tool: {call.name}"
         except Exception as exc:
@@ -331,6 +347,14 @@ class BookAgent:
     def _finalize(self, request_id: str, parsed: Optional[ModelBookAnswer],
                   evidence_by_id: dict[str, EvidenceItem],
                   *, allow_general_knowledge: bool = False) -> BookAnswer:
+        logger.info(
+            "ask finalize request=%s kind=%s supported=%s citations=%d evidence=%d",
+            request_id,
+            getattr(parsed, "kind", None) if parsed else None,
+            getattr(parsed, "supported", None) if parsed else None,
+            len(parsed.citation_ids) if parsed else 0,
+            len(evidence_by_id),
+        )
         if parsed is not None and parsed.kind == "chat":
             # Not a question about the book. Nothing was looked up and nothing is
             # being claimed, so there is nothing to cite and nothing to refuse.
@@ -346,6 +370,13 @@ class BookAgent:
         # In hybrid mode a general-knowledge answer may legitimately have no book
         # citations; only the grounded path force-refuses when sources are empty.
         if not sources and not allow_general_knowledge:
+            # Distinct from "the model said unsupported": here it claimed an answer
+            # but cited nothing usable, which is a different failure and previously
+            # looked identical from outside.
+            logger.info(
+                "ask refused request=%s reason=no_valid_sources citations=%d valid_ids=%d",
+                request_id, len(parsed.citation_ids), len(valid_ids),
+            )
             return BookAnswer(request_id=request_id, eyebrow=_INSUFFICIENT_EVIDENCE_EYEBROW,
                               body=_INSUFFICIENT_EVIDENCE_BODY, supported=False, sources=[])
         return BookAnswer(request_id=request_id, eyebrow=parsed.eyebrow,
