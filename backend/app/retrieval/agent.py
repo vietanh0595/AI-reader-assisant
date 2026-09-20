@@ -186,6 +186,8 @@ class BookAgent:
         request_id = str(uuid.uuid4())
         max_reading_order = None if include_whole_book else current_reading_order
         evidence_by_id: dict[str, EvidenceItem] = {}
+        sent_back_to_search = False
+        used_a_tool = False
         input_items: list[Any] = self._build_input(
             history, question, selected_text, quoted_answer,
             book_title=book_title, book_author=book_author, chapter_titles=chapter_titles,
@@ -205,12 +207,51 @@ class BookAgent:
                 [getattr(call, "name", "?") for call in calls], len(evidence_by_id),
             )
             if not calls:
-                return self._finalize(request_id, response.output_parsed, evidence_by_id,
+                parsed = response.output_parsed
+                # The model claiming an answer having called nothing and gathered
+                # nothing means it answered from its own memory of the book — which
+                # it often has, for anything well known — and then invented a
+                # citation id to satisfy the format. Observed in production once a
+                # thread had drifted through a few conversational turns: the
+                # grounding guard caught the fabricated id and the reader was told
+                # nothing could be found, for a question the book plainly answers.
+                #
+                # The prompt already instructs it to search. It stopped obeying, so
+                # this requires it instead — once, then the ordinary refusal, which
+                # is honest because nothing was ever retrieved.
+                #
+                # The test is whether it looked, not whether it found: a search
+                # that legitimately returns nothing is a fair reason to refuse, and
+                # pushing that model again would only waste a round. Not for
+                # kind="chat", which needs no evidence, and not in general-knowledge
+                # mode, which exists precisely to answer without the book.
+                if (
+                    not sent_back_to_search
+                    and not allow_general_knowledge
+                    and not used_a_tool
+                    and parsed is not None
+                    and parsed.kind == "answer"
+                ):
+                    sent_back_to_search = True
+                    logger.info("ask sent_back_to_search request=%s", request_id)
+                    input_items.extend(response.output)
+                    input_items.append({
+                        "role": "system",
+                        "content": (
+                            "You answered without searching the book, so nothing you "
+                            "wrote is grounded in it and any source id you gave was "
+                            "invented. Call search_book now and answer only from what "
+                            "it returns."
+                        ),
+                    })
+                    continue
+                return self._finalize(request_id, parsed, evidence_by_id,
                                       allow_general_knowledge=allow_general_knowledge)
             # Echo back ALL output items (reasoning + function calls), not just the
             # calls. Reasoning models (e.g. gpt-5-mini) pair each function_call with a
             # reasoning item; the Responses API rejects a function_call sent on the next
             # turn without its required reasoning item.
+            used_a_tool = True
             input_items.extend(response.output)
             for call in calls:
                 output = self._execute(
