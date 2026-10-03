@@ -55,6 +55,7 @@ import { ErrorInsightCard } from './src/components/ErrorInsightCard';
 import { buildDeleteBookPrompt } from './src/library/deleteBookPrompt';
 import { LibraryDeleteButton } from './src/components/LibraryDeleteButton';
 import { isWholeBookScopeOn } from './src/library/wholeBookScope';
+import { wholeBookAiBlocker } from './src/rag/wholeBookAiBlocker';
 import { deleteAccount } from './src/auth/deleteAccount';
 import { BookCover } from './src/components/BookCover';
 import { toAbsoluteAppFileUri, toStoredAppFilePath } from './src/library/appFilePath';
@@ -2876,7 +2877,34 @@ function ReaderApp() {
   // live session, or a signed-out user sees the Ask thread/mind map open as if nothing
   // changed.
   function canUseWholeBookAi(item: LibraryItem) {
-    return item.wholeBookAi.status === 'ready' && isAuthenticated;
+    return wholeBookAiBlocker({ status: item.wholeBookAi.status, isAuthenticated }) === 'none';
+  }
+
+  /**
+   * Respond to whatever is blocking Whole-Book AI, and say whether it was blocked.
+   *
+   * Every caller used to answer "no" by opening the Whole-Book AI sheet. That sheet
+   * reads the book's own status, so an expired session on an indexed book produced
+   * a sheet announcing "Whole-Book AI is ready. Start asking" — a button that only
+   * closes it. Tap, sheet, close, tap, for ever.
+   */
+  function handleWholeBookAiBlocker(item: LibraryItem): boolean {
+    const blocker = wholeBookAiBlocker({
+      status: item.wholeBookAi.status,
+      isAuthenticated,
+    });
+
+    if (blocker === 'none') {
+      return false;
+    }
+
+    if (blocker === 'signed_out') {
+      openSignIn('Asking questions across a whole book needs you signed in.');
+    } else {
+      setIsWholeBookAiOpen(true);
+    }
+
+    return true;
   }
 
   function clearPendingNoticeOfKind(bookId: string, kind: 'indexing' | 'mindmap') {
@@ -3579,11 +3607,10 @@ function ReaderApp() {
     }
     const { question, allowGeneralKnowledge } = pendingQuickAsk;
     setPendingQuickAsk(null);
-    if (!canUseWholeBookAi(activeLibraryItem)) {
+    if (handleWholeBookAiBlocker(activeLibraryItem)) {
       // Shouldn't happen while still signed in — the mind map can't render without
-      // Whole-Book AI — but fail safe by prompting to enable/sign in rather than
-      // silently dropping the ask.
-      setIsWholeBookAiOpen(true);
+      // Whole-Book AI — but fail safe by prompting rather than silently dropping
+      // the ask.
       return;
     }
     setAssistError(null);
@@ -3706,8 +3733,7 @@ function ReaderApp() {
       setAssistError(null);
       setIsAssistLoading(false);
       setIsSavedNotesOpen(false);
-      if (!canUseWholeBookAi(activeLibraryItem)) {
-        setIsWholeBookAiOpen(true);
+      if (handleWholeBookAiBlocker(activeLibraryItem)) {
         return;
       }
       setIsAskOpen(false);
@@ -4358,8 +4384,7 @@ function ReaderApp() {
   }
 
   function openConversationThread() {
-    if (!canUseWholeBookAi(activeLibraryItem)) {
-      setIsWholeBookAiOpen(true);
+    if (handleWholeBookAiBlocker(activeLibraryItem)) {
       return;
     }
     setAssistError(null);
@@ -5148,6 +5173,8 @@ function ReaderApp() {
               setIsAskOpen(false);
               setIsThreadCollapsed(false);
               setIsThreadOpen(true);
+            } else if (targetItem) {
+              handleWholeBookAiBlocker(targetItem);
             } else {
               setIsWholeBookAiOpen(true);
             }
