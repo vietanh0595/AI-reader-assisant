@@ -142,7 +142,9 @@ def test_drops_a_card_whose_note_id_was_never_sent():
 
 
 def test_a_failing_chunk_does_not_prevent_other_chunks_from_returning():
-    notes = [_note(f"n{i}") for i in range(10)]
+    # 16 notes split into two equal 8-note chunks, so the assertion below reflects
+    # exactly one whole chunk surviving, not a partial one.
+    notes = [_note(f"n{i}") for i in range(16)]
 
     def fake_parse(**kwargs):
         if "n0" in kwargs["input"]:
